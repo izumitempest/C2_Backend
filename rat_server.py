@@ -7,7 +7,7 @@ from datetime import datetime
 
 # Server settings
 HOST = "0.0.0.0"  # Listen on all interfaces
-PORT = 4444
+PORT = os.getenv("PORT", 4444)  # Use environment variable or default to 4444
 DATA_DIR = "rat_data"
 
 # Ensure data directory exists
