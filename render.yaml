@@ -2,9 +2,9 @@ services:
   - type: web
     name: rat-server
     env: python
-    plan: free  # Use 'starter' or other plans if needed
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python rat_server.py
     envVars:
       - key: PORT
-        value: 4444  # Render will override this with a dynamic port
+        value: 5000  # Flask runs on 5000 internally

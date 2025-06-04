@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>View Data - {{ filename }}</title>
+    <style>
+        body {
+            font-family: monospace;
+            background-color: #1C2526;
+            color: #00FF00;
+            padding: 20px;
+        }
+        h1 {
+            color: #A100FF;
+        }
+        pre {
+            background-color: #333638;
+            padding: 10px;
+            border: 1px solid #00FF00;
+            overflow-x: auto;
+        }
+        a {
+            color: #A100FF;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>Data File: {{ filename }}</h1>
+    <pre>{{ data | tojson(indent=2) }}</pre>
+    <a href="{{ url_for('index') }}">Back to Home</a>
+</body>
+</html>
