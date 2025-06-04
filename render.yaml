@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: rat-server
+    env: python
+    plan: free  # Use 'starter' or other plans if needed
+    buildCommand: pip install -r requirements.txt
+    startCommand: python rat_server.py
+    envVars:
+      - key: PORT
+        value: 4444  # Render will override this with a dynamic port
