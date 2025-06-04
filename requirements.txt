@@ -1,6 +1,1 @@
 wheel==0.43.0
-flask
-threading
-json
-os
-datetime
