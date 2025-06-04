@@ -1,6 +1,5 @@
 wheel==0.43.0
 flask
-socket==0.7.0
 threading
 json
 os
