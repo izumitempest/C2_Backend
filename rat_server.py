@@ -122,6 +122,17 @@ def handle_exfil_data(data):
             'current_dir': current_dir
         }, broadcast=True)
 
+    elif data_type == "network_data":
+        # Emit network data to web interface
+        emit('network_data', {
+            'client_id': client_id,
+            'timestamp': data.get('timestamp'),
+            'bytes_sent': data.get('bytes_sent'),
+            'bytes_recv': data.get('bytes_recv'),
+            'sent_speed_mbps': data.get('sent_speed_mbps'),
+            'recv_speed_mbps': data.get('recv_speed_mbps')
+        }, broadcast=True)
+
     # Emit updated client info to web interface
     client_info_list = [
         {'id': cid, 'system': info}

