@@ -705,10 +705,11 @@
         });
 
         socket.on('exfil_data', (data) => {
-            const parsedData = JSON.parse(data);
-            if (parsedData.type === 'system_info') {
-                const filename = parsedData.filename;
-                if (filename) {
+            // Handle the JSON string directly
+            try {
+                const parsedData = JSON.parse(data); // Expecting {"type": "system_info", "filename": filename}
+                if (parsedData.type === 'system_info' && parsedData.filename) {
+                    const filename = parsedData.filename;
                     const fileItem = document.createElement('div');
                     fileItem.className = 'file-item';
                     fileItem.setAttribute('data-filename', filename);
@@ -719,6 +720,8 @@
                     filesList.innerHTML = ''; // Clear and add new file
                     filesList.appendChild(fileItem);
                 }
+            } catch (e) {
+                console.error('Error parsing exfil_data:', e);
             }
         });
 
@@ -845,13 +848,13 @@
             commandInput.value = '';
         });
 
-        // Handle file clicks
-        document.querySelectorAll('.file-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const filename = item.getAttribute('data-filename');
-                window.location.href = `/view_file/${filename}`;
-            });
-        });
+        // Remove file click handler since view_file is no longer supported
+        // document.querySelectorAll('.file-item').forEach(item => {
+        //     item.addEventListener('click', () => {
+        //         const filename = item.getAttribute('data-filename');
+        //         window.location.href = `/view_file/${filename}`;
+        //     });
+        // });
 
         // Initialize everything
         updateTime();
