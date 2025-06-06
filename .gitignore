@@ -9,3 +9,6 @@ __pycache__
 *.json
 test.py
 sliver_implant
+*.wav
+*.png
+keylog.txt
