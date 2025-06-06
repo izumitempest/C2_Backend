@@ -877,6 +877,7 @@
             if (clients.length === 0) {
                 clientList.innerHTML = '<div class="empty-state">No clients connected</div>';
                 document.getElementById('client-count').textContent = '0 Clients Connected';
+                selectedClient = null;
                 return;
             }
 
@@ -909,7 +910,7 @@
                     document.querySelectorAll('.client-item').forEach(item => item.classList.remove('selected'));
                     clientItem.classList.add('selected');
                     selectedClient = client.id;
-                    document.getElementById('client-select').value = client.id;
+                    document.getElementById('client-select').value = client.id; // Sync dropdown with selection
                 });
 
                 clientList.appendChild(clientItem);
@@ -917,6 +918,9 @@
                 const option = document.createElement('option');
                 option.value = client.id;
                 option.textContent = `${client.id} (${ipAddresses[0]})`;
+                if (selectedClient === client.id) {
+                    option.selected = true; // Keep the dropdown selection
+                }
                 clientSelect.appendChild(option);
             });
         }
@@ -996,7 +1000,7 @@
                 if (!selectedClient) return;
                 isDragging = true;
                 const rect = screen.getBoundingClientRect();
-                const x = ((e.clientX - rect.left) / rect.width) * 1280; // Scale to 1280x720
+                const x = ((e.clientX - rect.left) / rect.width) * 1280;
                 const y = ((e.clientY - rect.top) / rect.height) * 720;
                 const button = e.button === 0 ? 'left' : 'right';
                 socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_click', x, y, button, pressed: true }) });
@@ -1088,6 +1092,14 @@
                         body: new URLSearchParams({ client_id: clientId, command })
                     });
                 }
+            });
+        });
+
+        // Add dropdown change event to sync with selectedClient
+        document.getElementById('client-select').addEventListener('change', (e) => {
+            selectedClient = e.target.value;
+            document.querySelectorAll('.client-item').forEach(item => {
+                item.classList.toggle('selected', item.dataset.clientId === selectedClient);
             });
         });
 
