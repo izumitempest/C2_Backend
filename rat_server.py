@@ -268,4 +268,6 @@ if __name__ == '__main__':
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     os.makedirs(app.config['DOWNLOAD_FOLDER'], exist_ok=True)
     # Run the server
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+    # Note: allow_unsafe_werkzeug=True is used for development purposes only.
+    # In production, consider using a proper WSGI server like Gunicorn or uWSGI.
