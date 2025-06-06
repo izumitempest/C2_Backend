@@ -13,3 +13,4 @@ sliver_implant
 *.png
 keylog.txt
 test.txt
+.env
