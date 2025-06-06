@@ -939,7 +939,7 @@ def main():
         while True:
             try:
                 print(f"[*] Attempting to connect to {SERVER_URL}")
-                sio.connect(SERVER_URL, wait_timeout=10, verify=False, namespaces=['/client'])
+                sio.connect(SERVER_URL, wait_timeout=10, namespaces=['/client'])
                 sio.wait()
                 break
             except Exception as e:

