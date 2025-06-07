@@ -15,3 +15,5 @@ keylog.txt
 test.txt
 .env
 build
+setup.py
+dist
