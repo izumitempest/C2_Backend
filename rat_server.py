@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import socketio
 import eventlet
+import eventlet.wsgi
 import json
 from flask import Flask, render_template
 from datetime import datetime
